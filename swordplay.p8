@@ -1624,7 +1624,7 @@ end
 
 -- swordplay ui
 
-function swordplay_menu(remark, retorts)
+function retort_menu(remark, retorts)
 	return menu_list(
 		list.from_tbl(retorts)
 			:map(function(retort)
@@ -1704,35 +1704,54 @@ end
 -->8
 -- swordplay scene
 
+-- create a battle flow
+-- * btl:
+--   * remark
+--   * retort_opts
+--   * retort
+-- * tide - the "tide" of battle
+--  0.0: player loses
+--  0.5: even odds
+--  1.0: player wins
+function battle_flow(btl, tide)
+	return flow.seq({
+		remark_flow(btl.remark),
+		menu_flow(
+			retort_menu(
+				btl.remark,
+				btl.retort_opts
+			)
+		)
+	}):flatmap(function(choice)
+		local _,retort = unpack(choice)
+		return remark_flow(retort)
+			:map(function()
+				return retort == btl.retort
+					and tide + 0.25
+					or  tide - 0.25
+			end)
+	end)
+end
+
 swordplay_scn = flow_scn(
 	flow.seq({
-		remark_flow("you fight like a dairy farmer"),
-		menu_flow(
-			swordplay_menu(
-				"you fight like a dairy farmer",
-				list.from_tbl({
-					"how appropriate, you fight like a cow",
-					"uh...",
-				})
-			)
-		):flatmap(function(choice)
-			local remark,retort = unpack(choice)
-			return remark_flow(retort)
-		end),
+		battle_flow({
+			remark="you fight like a dairy farmer",
+			retort="how appropriate, you fight like a cow",
+			retort_opts={
+				"uh...",
+				"how appropriate, you fight like a cow",
+			}
+		}, 0.5),
 		---
-		remark_flow("i once owned a dog that was smarter than you"),
-		menu_flow(
-			swordplay_menu(
-				"i once owned a dog that was smarter than you",
-				list.from_tbl({
-					"he must have taught you everything you know",
-					"uh...",
-				})
-			)
-		):flatmap(function(choice)
-			local remark,retort = unpack(choice)
-			return remark_flow(retort)
-		end),
+		battle_flow({
+			remark="i once owned a dog that was smarter than you",
+			retort="how appropriate, you fight like a cow",
+			retort_opts={
+				"uh...",
+				"he must have taught you everything you know",
+			}
+		}, 0.5),
 	}):wrap(ui_scn))
 __gfx__
 00000000000000007077770750555505077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000
