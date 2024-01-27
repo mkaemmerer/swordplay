@@ -1443,35 +1443,33 @@ function transition(cur,prv)
 end
 -->8
 -- swordplay scene
-game_scn = flow.once(function(nxt)
-	local function sel(opt)
-		cls()
-		print(opt)
-		stop()
-	end
+game_scn = flow.once(function(nxt)		
+	local mnu_flow = flow.loop(
+		flow.seq({
+			swordplay_menu(
+				"you fight like a dairy farmer",
+				list.from_tbl({
+					"how appropriate, you fight like a cow",
+					"uh...",
+				})
+			),
+			swordplay_menu(
+				"i once owned a dog that was smarter than you",
+				list.from_tbl({
+					"he must have taught you everything you know",
+					"uh...",
+				})
+			)
+		})
+	)
 	
-	local menu_height = 48
-	local opts = {
-		"how appropriate, you fight like a cow",
-		"uh...",
-	}
-	
-	local ui_curs = menu_list({
-		menu_option(opts[1], sel),
-		menu_option(opts[2], sel),
-	})
-	:map(function(mnu)
-		return ui_layout({
-				ui_group({
-					ui_wrap_text("you fight like a dairy farmer", 7)
-						:align("center","center")
-				}):size("fill", 128 - menu_height),
-				mnu
-					:size("fill", menu_height),
-			}, "stack", 8)
-			:size("fill","fill")
-			:selectable(mnu.select)
-	end)
+	local ui_curs = nil
+	mnu_flow.go(
+		function(s)
+ 		ui_curs = s
+		end,
+		noop
+	)
 
 	return {
 		draw = function(m)
@@ -1490,6 +1488,30 @@ game_scn = flow.once(function(nxt)
 		end,
 	}
 end)
+
+function swordplay_menu(remark, retorts)
+	local menu_height = 48
+
+	return flow.once(function(nxt)		
+		return menu_list(
+			retorts:map(function(retort)
+				return menu_option(retort, nxt)
+			end)
+		)
+		:map(function(mnu)
+			return ui_layout({
+					ui_group({
+						ui_wrap_text(remark, 7)
+							:align("center","center")
+					}):size("fill", 128 - menu_height),
+					mnu
+						:size("fill", menu_height),
+				}, "stack", 8)
+				:size("fill","fill")
+				:selectable(mnu.select)
+		end)
+	end)
+end
 
 
 -- menus
