@@ -23,10 +23,10 @@ function _init()
 
 	-- flow
 	local game_flow = flow.seq({
-		presented_by_scn,
+--		presented_by_scn,
 		flow.loop(
 			flow.seq({
-				title_scn,
+--				title_scn,
 				swordplay_scn,
 			})
 		),
@@ -85,7 +85,7 @@ function suspend(f)
 	return function(...)
 		local args = {...}
 		return function()
-			f(unpack(args))
+			return f(unpack(args))
 		end
 	end
 end
@@ -777,10 +777,11 @@ function ui.from_ui(c1,c2)
 		"draw",
 		"offset",
 		"min_dims",
+		"dims",	
 		"focus",
 		"blur",
+		"update",
 		"select",
-		"dims",
 	}
 	local copy={}
 	foreach(keys, function(key)
@@ -794,6 +795,9 @@ function ui.from_rdr(r)
 		draw     = function(tbl,bnds)
 			local x,y,w,h = unpack(bnds)
 			r.run({w,h}).draw(tbl,bnds)
+		end,
+		update   = function(tbl,dt)
+			r.run({0,0}).update(tbl,dt)
 		end,
 		offset   = r:flatmap(function(c) return c.offset end),
 		min_dims = r:flatmap(function(c) return c.min_dims end),
@@ -1000,6 +1004,11 @@ function ui_group(cs)
 			foreach(cs, function(c)
 				draw_ui(c,bnds)
 			end)
+		end,
+		update = function(g,dt)
+			foreach(cs, function(c)
+				c:update(dt)
+			end)
 		end
 	})
 end
@@ -1053,6 +1062,7 @@ ui_meta = {
 		translate=ui_offset,
 		size=ui_size,
 		effect=ui_effect,
+		update=noop,
 		
 		-- focus
 		focusable=function(c,f,sel)
@@ -1079,6 +1089,13 @@ ui_meta = {
 				select=f,
 			})
 		end,
+		
+		-- updates
+		updatable=function(c,f)
+			return ui.from_ui(c,{
+				update=f,
+			})
+		end
 	}
 }
 
@@ -1288,7 +1305,7 @@ function cursor_single(x)
 	return ix_array.create({x})
 end
 
--- draw fucntions -------------
+-- ui -------------------------
 
 function box9(coords)
 	local xs,ys = unpack(coords)
@@ -1315,6 +1332,40 @@ function box9(coords)
 	end
 end
 
+menu_box = ui.from_draw(
+	box9({
+		{16,18,22,24},
+		{0,2,6,8}
+	})
+)
+
+function menu_panel(c)
+	return ui_group({
+		menu_box,
+		c:inset(4)
+	})
+end
+
+function text_reveal(str,col,len)
+	return ui.from_rdr(rdr(function(dims)
+		local w,h = unpack(dims)
+		local txt = wrap_lines(str,w)
+		local dims = rdr(const({
+			text_width(txt),
+			text_height(txt)-1
+		}))
+		return ui.create({
+			offset   = no_offset,
+			min_dims = dims,
+			dims     = dims,
+			draw=function(c,bnds)
+				local show_str = sub(txt,0,len())
+				local x,y=unpack(bnds)
+				print(show_str,x,y,col)
+			end
+		})
+	end):memo(hash_dims))
+end
 -->8
 -- scenes
 
@@ -1389,6 +1440,27 @@ title_scn = flow.once(function(nxt)
 end)
 
 
+-- wrap a flow as a scene
+function flow_scn(flw)
+	return flow.once(function(nxt)
+		local scn = nil
+		flw.go(
+			function(s)
+				scn = s
+			end,
+			nxt
+		)
+		return {
+			update=function(_,dt)
+				scn:update(dt)
+			end,
+			draw=function(_)
+				scn:draw()
+			end,
+		}
+	end)
+end
+
 -- scene transitions
 
 function transition_flow(f)
@@ -1429,99 +1501,71 @@ function transition(cur,prv)
 	}
 end
 -->8
--- swordplay ui
+-- swordplay flows
 
 function text_flow(text)
 	return flow.once(function(nxt)
 		local t = 0
+		local spd = 20
 		local function len()
-			return t*20
+			return t*spd
 		end
-		local ui = text_reveal(text,7,len)
-		
-		return {
-			draw = function(scn)
-				draw_ui(ui, screen_bounds)
-			end,
-			update = function(scn,dt)			
+		return text_reveal(text,7,len)
+			:updatable(function(scn,dt)			
 				t += dt
-				if len() > #text then
+				if t > #text/spd + 0.5 then
 					nxt()
 				end
-			end,
-		}
+			end)
 	end)
 end
 
-function menu_flow(create_menu)	
-	return flow.once(function(nxt)
-		local ui_curs = create_menu(nxt)
-		return {
-			draw = function(scn)
-				draw_ui(ui_curs:get(), screen_bounds)
-			end,
-			update = function(scn,dt)			
-				if btnp(⬆️) and ui_curs:hasprev() then
-					ui_curs = ui_curs:prev()
-				end
-				if btnp(⬇️) and ui_curs:hasnext() then
-					ui_curs = ui_curs:next()
-				end
-				if btnp(❎) then
-					ui_curs:get().select()
-				end
-			end,
-		}
+
+function menu_flow(menu)	
+	return flow.create(function(nxt,done)
+		local function make_ui(curs)
+			return curs:get()
+				:updatable(function(scn,dt)
+					if btnp(⬆️) and curs:hasprev() then
+						nxt(make_ui(curs:prev()))
+					end
+					if btnp(⬇️) and curs:hasnext() then
+						nxt(make_ui(curs:next()))
+					end
+					if btnp(❎) then
+						done(curs:get().select())
+					end
+				end)
+		end
+		
+		nxt(make_ui(menu))
 	end)
 end
 
--- gameplay segments
-
-function text_reveal(str,col,len)
-	return ui.from_rdr(rdr(function(dims)
-		local w,h = unpack(dims)
-		local txt = wrap_lines(str,w)
-		local dims = rdr(const({
-			text_width(txt),
-			text_height(txt)-1
-		}))
-		return ui.create({
-			offset   = no_offset,
-			min_dims = dims,
-			dims     = dims,
-			draw=function(c,bnds)
-				local show_str = sub(txt,0,len())
-				local x,y=unpack(bnds)
-				print(show_str,x,y,col)
-			end
-		})
-	end):memo(hash_dims))
-end
+-- swordplay ui
 
 function swordplay_menu(remark, retorts)
 	local menu_height = 48
 
-	return function(nxt)		
-		return menu_list(
-			retorts:map(function(retort)
-				return menu_option(retort, function()
-					nxt({remark,retort})
-				end)
+	return menu_list(
+		retorts:map(function(retort)
+			return menu_option(retort, function()
+				return {remark,retort}
 			end)
-		)
-		:map(function(mnu)
-			return ui_layout({
-					ui_group({
-						ui_wrap_text(remark, 7)
-							:align("center","center")
-					}):size("fill", 128 - menu_height),
-					mnu
-						:size("fill", menu_height),
-				}, "stack", 8)
-				:size("fill","fill")
-				:selectable(mnu.select)
 		end)
-	end
+	)
+	:map(function(mnu)
+		return ui_layout({
+				ui_group({
+					ui_wrap_text(remark, 6)
+						:align("center","center")
+				}):size("fill", 128 - menu_height),
+				menu_panel(mnu)
+					:size("fill", menu_height),
+			}, "stack")
+			:size("fill","fill")
+			:selectable(mnu.select)
+	end)
 end
 
 
@@ -1537,7 +1581,7 @@ function menu_option(txt,cb)
 					or  skip_draw
 			)
 			:translate(0,-2),
-			ui_wrap_text(txt, is_focused and 7 or 6)
+			ui_wrap_text(txt, is_focused and 7 or 5)
 				:size(function(dims)
 					local w,h = unpack(dims)
 					return w - 12
@@ -1581,47 +1625,59 @@ function menu_list(opts)
 		end)
 	return fuse_cursor(curs)
 end
+
 -->8
 -- swordplay scene
 
-swordplay_scn = flow.seq({
-	text_flow("you fight like a dairy farmer"),
-	menu_flow(
-		swordplay_menu(
-			"you fight like a dairy farmer",
-			list.from_tbl({
-				"how appropriate, you fight like a cow",
-				"uh...",
-			})
-		)
-	):flatmap(function(choice)
-		local remark,retort = unpack(choice)
-		return run_txt(retort)
-	end),
-	---
-	text_flow("i once owned a dog that was smarter than you"),
-	menu_flow(
-		swordplay_menu(
-			"i once owned a dog that was smarter than you",
-			list.from_tbl({
-				"he must have taught you everything you know",
-				"uh...",
-			})
-		)
-	):flatmap(function(choice)
-		local remark,retort = unpack(choice)
-		return run_txt(retort)
-	end),
-})
+swordplay_scn = flow_scn(
+	flow.seq({
+		text_flow("you fight like a dairy farmer"),
+		menu_flow(
+			swordplay_menu(
+				"you fight like a dairy farmer",
+				list.from_tbl({
+					"how appropriate, you fight like a cow",
+					"uh...",
+				})
+			)
+		):flatmap(function(choice)
+			local remark,retort = unpack(choice)
+			return text_flow(retort)
+		end),
+		---
+		text_flow("i once owned a dog that was smarter than you"),
+		menu_flow(
+			swordplay_menu(
+				"i once owned a dog that was smarter than you",
+				list.from_tbl({
+					"he must have taught you everything you know",
+					"uh...",
+				})
+			)
+		):flatmap(function(choice)
+			local remark,retort = unpack(choice)
+			return text_flow(retort)
+		end),
+	}):wrap(function(ui)
+		return {
+			update=function(scn,dt)
+				ui:update(dt)
+			end,
+			draw=function(scn)
+				draw_ui(ui, screen_bounds)
+			end,
+		}
+	end)
+)
 __gfx__
-00000000000000007077770700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000007077770750555505000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000000007000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000070000007000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000777777777000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700070000007000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700000000007000000750000005000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000070000007000000750000005000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000777777777000000750000005000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700070000007000000750000005000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000007077770700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000007077770750555505000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
