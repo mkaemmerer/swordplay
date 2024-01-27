@@ -5,9 +5,14 @@ __lua__
 --by mabbees
 
 -- todos
---  menu: can choose an option
---  menu: can wrap text
 --  flow: retorts & counters
+--  flow: unlock responses
+--  ui: cool looking menu
+--  ui: text reveal
+--  sfx: beep speak
+--  music: music
+--  anim: battle animations
+--  story: make some jokes
 
 -- global constants
 debug = false
@@ -126,6 +131,33 @@ end
 
 function lerp(a,b,t)
 	return a + t*(b-a)
+end
+
+-- memoization ----------------
+
+-- context-aware caching
+function memo(f, hash)
+	hash = hash or id
+	local cache = {}
+	return function(x)
+		local key = hash(x)
+		if cache[key] == nil then
+			cache = prune(cache,4)
+			cache[key] = f(x)
+		end
+		return cache[key]
+	end
+end
+
+function prune(tbl,n)
+	local ret = {}
+	local i = n
+	for k,v in pairs(tbl) do
+		ret[k] = v
+		i -= 1
+		if i <= 0 then break end
+	end
+	return ret
 end
 
 -- algebriac functions --------
@@ -277,6 +309,9 @@ rdr_meta={
 				end
 			)
 		end,
+		memo=function(r,hash)
+			return rdr(memo(r.run, hash))
+		end
 	}
 }
 
@@ -684,6 +719,52 @@ function text_height(txt)
 	return height
 end
 
+function wrap_lines(txt,width)
+	local buffer=""
+	local len = 0
+
+	for i, word in words(txt) do
+		local w = word_width(word)
+		if len+w > width then
+			-- push next word to next line
+			buffer = buffer.."\n"..word
+			len=w
+		else
+			-- next word still fits on the line
+			if txt[i-1] == "\n" then
+				-- word break is also a line break
+				buffer = buffer.." "..word.."\n"
+				len=0
+			else
+				-- word break is a space
+				local sep = len == 0 and "" or " "
+				buffer = buffer..sep..word
+				len += w + word_width(sep)
+			end
+		end
+	end
+	
+	return buffer
+end
+
+function words(txt)
+	local function iter(txt, start)
+		if start > #txt then return nil end
+		for i=start,#txt do
+			if txt[i] == " " or txt[i] == "\n" then
+				return i+1, sub(txt,start,i-1)
+			end
+		end
+		return #txt+1, sub(txt,start,#txt)
+	end
+	return iter, txt, 1
+end
+
+function word_width(txt)
+	return 4 * #txt
+end
+
+
 
 -- ui components --------------
 local ui = {}
@@ -698,6 +779,10 @@ full_dims = rdr(id)
 
 screen_bounds = {0,0,128,128}
 
+function hash_dims(dims)
+	local w,h=unpack(dims)
+	return w..":"..h
+end
 
 function measure_ui(c, bnds)
 	local ox,oy,ow,oh = unpack(bnds)
@@ -785,6 +870,14 @@ function ui_text(str,col)
 			print(str,x,y,col)
 		end
 	})
+end
+
+function ui_wrap_text(str,c)
+	return ui.from_rdr(rdr(function(dims)
+		local w,h = unpack(dims)
+		local txt = wrap_lines(str,w)
+		return ui_text(txt,c)
+	end):memo(hash_dims))
 end
 
 function ui_spr(n,sw,sh)
@@ -877,7 +970,7 @@ function ui_size(c, w_size, h_size)
 		end
 		
 		return {w,h}
-	end)
+	end):memo(hash_dims)
 	return ui.from_ui(c, {
 		min_dims = dims,
 		dims     = dims,
@@ -914,7 +1007,7 @@ function ui_align(c, x_align, y_align)
 			end
 			
 			return {dx,dy}
-		end),
+		end):memo(hash_dims),
 	})
 end
 
@@ -1396,13 +1489,24 @@ end)
 -- menus
 
 function menu_option(txt,cb)
-	local ui = ui_text(txt, 6)
+	function make_opt(is_focused)
+		return ui_layout({
+			ui_text(">", is_focused and 7 or 0),
+			ui_wrap_text(txt, is_focused and 7 or 6)
+				:size(function(dims)
+					local w,h = unpack(dims)
+					return w - 10
+				end,"fit")
+		},"inline",4)
+	end
+	
+	return cursor_single(
+		make_opt(false)
 		:focusable(
-			ui_text("> " .. txt, 7),
+			make_opt(true),
 			suspend(cb)(txt)
 		)
-	return cursor_single(
-		ui:focus()
+		:focus()
 	)
 end
 
