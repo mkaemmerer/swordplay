@@ -8,6 +8,7 @@ __lua__
 --  ui: scroll for more opts?
 --  flow: retorts & counters
 --  flow: unlock responses
+--  ai: pirates to fight
 --  sfx: beep speak
 --  music: battle music
 --  anim: battle animations
@@ -1711,6 +1712,13 @@ comeback_retorts = {
 		= "he must have taught you everything you know",
 }
 
+-- invert the table
+retort_insults = {}
+for k,v in pairs(comeback_retorts) do
+	retort_insults[v] = k
+end
+
+
 -- battle state:
 --   * insults - available insults
 --   * retorts - available retorts
@@ -1768,71 +1776,186 @@ function add_retort(state,retort)
 	}
 end
 
+function resolve_attack(state,insult,retort)
+	local success = retort == comeback_retorts[insult]
+	-- learn new returt,
+	-- update the battle
+	local new_state = add_retort(
+		set_tide(
+			state,
+			success
+				and state.tide + 0.25
+				or  state.tide - 0.25
+		),
+		retort
+	)
+	return new_state
+end
+
+function resolve_defend(state,insult,retort)
+	local success = retort == comeback_retorts[insult]
+	-- learn new insult,
+	-- update the battle
+	local new_state = add_insult(
+		set_tide(
+			state,
+			success
+				and state.tide + 0.25
+				or  state.tide - 0.25
+		),
+		insult
+	)
+	return new_state
+end
+
+-- fighters
+-- a fighter has:
+-- * insults - insults they will attack with
+-- * retorts - retorts they can defend with
+
+function enemy_get_retort(enemy,insult)
+	local has_retort = set_has(enemy.retorts, comeback_retorts[insult])
+	local retort = has_retort
+		and comeback_retorts[insult]
+		or  "ouch..."
+	return retort		
+end
+
+-- a tough enemy
+enemy_1 = {
+	insults = {
+		"you fight like a dairy farmer",
+		"i once owned a dog that was smarter than you"		
+	},
+	retorts = {
+		"how appropriate, you fight like a cow",
+		"he must have taught you everything you know"
+	}
+}
+
+-- an easier enemy
+enemy_2 = {
+	insults = {
+		"i once owned a dog that was smarter than you"		
+	},
+	retorts = {
+		"he must have taught you everything you know"
+	}
+}
 -->8
 -- swordplay scene
 
--- attack with an insult
-function attack_flow(state)
-	return menu_flow(
-		retort_menu(
-			"",
-			state.insults,
-			state
-		)
-	):flatmap(function(choice)
-		local _,insult = unpack(choice)
-		return flow.seq({
-			remark_flow(insult,state),
-			-- todo: ai responds to insult
-		})
-		:map(const(state))
+-- player adapter
+player_adapter = {
+	get_insult = function(state)
+		return menu_flow(
+			retort_menu(
+				"",
+				state.insults,
+				state
+			)
+		):map(function(choice)
+			local _,insult = unpack(choice)
+			return insult
+		end)
+	end,
+	get_retort = function(state,insult)
+		return menu_flow(
+			retort_menu(
+				insult,
+				state.retorts,
+				state
+			)
+		):map(function(choice)
+			local _,retort = unpack(choice)
+			return retort
+		end)
+	end,
+}
+
+
+-- enemy adapter
+function enemy_adapter(enemy)
+	return {
+		get_insult=function(state)
+			return flow.create(function(nxt,done)
+				local insult = rnd(enemy.insults)
+				done(insult)
+			end)
+		end,
+		get_retort=function(state,insult)
+			return flow.create(function(nxt,done)
+				local retort = enemy_get_retort(enemy, insult)
+				done(retort)
+			end)
+		end,
+	}
+end
+
+
+function battle_turn(state,attacker,defender,resolve)
+	return attacker.get_insult(state)
+		:flatmap(function(insult)
+			return remark_flow(insult,state)
+				:flatmap(function()
+					return defender.get_retort(state,insult)
+				end)
+				:flatmap(function(retort)
+					return remark_flow(retort,state)
+						:map(function()
+							return resolve(state,insult,retort)
+						end)
+				end)
+		end)
+end
+
+function player_turn(state,enemy)
+	return battle_turn(
+		state,
+		player_adapter,
+		enemy_adapter(enemy),
+		resolve_attack
+	)
+end
+
+function enemy_turn(state,enemy)
+	return battle_turn(
+		state,
+		enemy_adapter(enemy),
+		player_adapter,
+		resolve_defend
+	)
+end
+
+
+function battle(state,enemy,turn)
+	if state.tide == 1 then
+		return flow.of("victory")
+	end
+	if state.tide == 0 then
+		return flow.of("defeat")
+	end
+	
+	local do_turn = turn == "player"
+		and player_turn(state,enemy)
+		or  enemy_turn(state,enemy)
+		
+	return do_turn:flatmap(function(newstate)
+		local opponent = turn == "player"
+			and "enemy"
+			or  "player"
+		return battle(newstate,enemy,opponent)
 	end)
 end
 
-
-
--- defend from an insult
-function defend_flow(insult)
-	return function(state)
-		return flow.seq({
-			remark_flow(insult,state),
-			menu_flow(
-				retort_menu(
-					insult,
-					state.retorts,
-					state
-				)
-			)
-		}):flatmap(function(choice)
-			local _,retort = unpack(choice)
-			local success = retort == comeback_retorts[insult]
-						
-			local new_state = add_insult(
-				set_tide(
-					state,
-					success
-						and state.tide + 0.25
-						or  state.tide - 0.25
-				),
-				insult
-			)
-			
-			return remark_flow(retort,state)
-				:map(const(new_state))
-		end)
-	end
-end
-
 swordplay_scn = flow_scn(
-	flow.of(start_battle_state)
-		:flatmap(attack_flow)
-		:flatmap(defend_flow("you fight like a dairy farmer"))
-		:flatmap(attack_flow)
-		:flatmap(defend_flow("i once owned a dog that was smarter than you"))
-		:flatmap(attack_flow)
-		:flatmap(defend_flow("you fight like a dairy farmer"))
-		:wrap(ui_scn)
+	battle(
+		start_battle_state,
+		enemy_1,
+		"enemy"
 	)
+		:wrap(ui_scn)
+)
 __gfx__
 00000000000000007077770750555505077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000777777770077700000000000000000000000000000000000000000000000000000000000000000000000000000000000
