@@ -5,8 +5,6 @@ __lua__
 --by mabbees
 
 -- todos
---  ui: progress bar
---  ui: cool looking menu
 --  ui: scroll for more opts?
 --  flow: retorts & counters
 --  flow: unlock responses
@@ -1388,11 +1386,13 @@ function swordplay_ui(top,mnu,opts)
 	return ui_layout({
 			-- progress bar
 			progress_bar(opts.fac or 0.5)
-				:inset(8),
+				:inset(4),
 			-- top part
 			ui_group({
 				top:align("center","center")
-			}):size("fill", 128 - menu_height - bar_height),
+			})
+			:inset(4)
+			:size("fill", 128 - menu_height - bar_height),
 			-- menu part
 			menu_panel(mnu, opts.col or "light")
 				:size("fill", menu_height),
@@ -1611,20 +1611,20 @@ end
 -->8
 -- swordplay flows
 
-function remark_flow(text)
+function remark_flow(text,state)
 	return text_flow(text)
 		:wrap(function(c)
 				return swordplay_ui(
 					c,
 					ui_empty,
-					{col="dark"}
+					{col="dark",fac=state.tide}
 				)
 		end)
 end
 
 -- swordplay ui
 
-function retort_menu(remark, retorts)
+function retort_menu(remark, retorts, state)
 	return menu_list(
 		list.from_tbl(retorts)
 			:map(function(retort)
@@ -1638,7 +1638,7 @@ function retort_menu(remark, retorts)
 		return swordplay_ui(
 			top,
 			mnu,
-			{col="light"}
+			{col="light",fac=state.tide}
 		)
 	end)
 end
@@ -1707,28 +1707,30 @@ end
 -- create a battle flow
 -- * btl:
 --   * remark
---   * retort_opts
 --   * retort
--- * tide - the "tide" of battle
---  0.0: player loses
---  0.5: even odds
---  1.0: player wins
-function battle_flow(btl, tide)
+-- * state:
+--   * retorts - available retorts
+--   * tide - the "tide" of battle
+--      0.0: player loses
+--      0.5: even odds
+--      1.0: player wins
+function battle_flow(btl,state)
 	return flow.seq({
-		remark_flow(btl.remark),
+		remark_flow(btl.remark,state),
 		menu_flow(
 			retort_menu(
 				btl.remark,
-				btl.retort_opts
+				state.retorts,
+				state
 			)
 		)
 	}):flatmap(function(choice)
 		local _,retort = unpack(choice)
-		return remark_flow(retort)
+		return remark_flow(retort,state)
 			:map(function()
 				return retort == btl.retort
-					and tide + 0.25
-					or  tide - 0.25
+					and state.tide + 0.25
+					or  state.tide - 0.25
 			end)
 	end)
 end
@@ -1738,20 +1740,24 @@ swordplay_scn = flow_scn(
 		battle_flow({
 			remark="you fight like a dairy farmer",
 			retort="how appropriate, you fight like a cow",
-			retort_opts={
+		},{
+			retorts={
 				"uh...",
 				"how appropriate, you fight like a cow",
-			}
-		}, 0.5),
+			},
+			tide=0.25,
+		}),
 		---
 		battle_flow({
 			remark="i once owned a dog that was smarter than you",
 			retort="how appropriate, you fight like a cow",
-			retort_opts={
+		},{
+			retorts={
 				"uh...",
 				"he must have taught you everything you know",
-			}
-		}, 0.5),
+			},
+			tide=0.5,
+		}),
 	}):wrap(ui_scn))
 __gfx__
 00000000000000007077770750555505077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000
