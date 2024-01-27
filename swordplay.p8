@@ -4,6 +4,11 @@ __lua__
 --swordplay
 --by mabbees
 
+-- todos
+--  menu: can choose an option
+--  menu: can wrap text
+--  flow: retorts & counters
+
 -- global constants
 debug = false
 
@@ -14,10 +19,10 @@ function _init()
 
 	-- flow
 	local game_flow = flow.seq({
-		presented_by_scn,
+--		presented_by_scn,
 		flow.loop(
 			flow.seq({
-				title_scn,
+--				title_scn,
 				game_scn,
 			})
 		),
@@ -56,7 +61,6 @@ end
 -- * drawing
 -- * text utils
 -- * ui components
--- * follow
 
 
 -- functions
@@ -80,6 +84,13 @@ function suspend(f)
 		return function()
 			f(unpack(args))
 		end
+	end
+end
+
+function call(method, ...)
+	local args = {...}
+	return function(e)
+		return e[method](e,unpack(args))
 	end
 end
 
@@ -720,6 +731,9 @@ function ui.from_ui(c1,c2)
 		"draw",
 		"offset",
 		"min_dims",
+		"focus",
+		"blur",
+		"select",
 		"dims",
 	}
 	local copy={}
@@ -983,90 +997,35 @@ ui_meta = {
 		translate=ui_offset,
 		size=ui_size,
 		effect=ui_effect,
+		
+		-- focus
+		focusable=function(c,f,sel)
+			local focus,blur
+			focus = function(_)
+				return ui.from_ui(f, {
+					focus=focus,
+					blur=blur,
+					select=sel,
+				})
+			end
+			blur = function(_)
+				return ui.from_ui(c, {
+					focus=focus,
+					blur=blur,
+				})
+			end
+			return blur()
+		end,
+		
+		-- selection
+		selectable=function(c,f)
+			return ui.from_ui(c,{
+				select=f,
+			})
+		end,
 	}
 }
 
---follow strategies
-
-function follow_fixed(p,t)
-	return p
-end
-
-function follow_track(p,t)
-	return t
-end
-
-function follow_smooth(fac)
-	return function(p,t)
-		return lerp(p,t,fac)
-	end
-end
-
-function follow_stationary(l)
-	return const(l)
-end
-
-function follow_offset(off)
-	return function(p,t)
-		return t+off
-	end
-end
-
-function follow_steady(dist)
-	return function(p,t)
-		local d = t-p
-		local len = max(0, d:len() - dist)
-		local clipped = len * d:unit()
-		return p + clipped
-	end
-end
-
-function follow_steady_rect(w,h)
-	return function(p,t)
-		local d = t-p
-		
-		local x_len = max(0, abs(d.x) - w)
-		local y_len = max(0, abs(d.y) - h)
-		local clipped = v2(
-			x_len * sgn(d.x),
-			y_len * sgn(d.y)
-		)
-		
-		return p + clipped
-	end
-end
-
-function follow_bounds(x_min, y_min, x_max, y_max)
-	return function(p,t)
-		return v2(
-			mid(x_min, t.x, x_max),
-			mid(y_min, t.y, y_max)
-		)
-	end
-end
-
-function follow_quantize(w,h)
-	return function(p,t)
-		return v2(w*(t.x\w), h*(t.y\h))
-	end
-end
-
-function follow_dynamic(cam)
-	return function(p,t)
-		return cam(p,t)(p,t)
-	end
-end
-
-function follow_compose(f,g)
-	return function(p,t)
-		return g(p,f(p,t))
-	end
-end
-
-follow_chain = reduce(
-	follow_compose,
-	follow_track
-)
 -->8
 -- game tools
 
@@ -1109,19 +1068,172 @@ input_await_❎🅾️ = behavior.par({
 })
 
 
--->8
--- scenes
 
-game_scn = flow.once(function(nxt)	
-	return {
-		update=function(scn,dt)
-			
+-- cursors --------------------
+
+ix_array = {}
+
+function list_copy(tbl)
+	local ret = {}	
+	for x in all(tbl) do
+		add(ret, x)
+	end
+	return ret
+end
+
+ix_array_meta = {
+	__index= {
+		-- comonad
+		map = function(c,f)
+			return ix_array.create(
+				list_map(c.tbl,f),
+				c.ix
+			)
 		end,
-		draw=function(scn)
-			map()
+		extend = function(c,f)
+			return ix_array.create(
+				list_map(c.tbl, function(_,i)
+					return f(ix_array.create(c.tbl, i))
+				end),
+				c.ix
+			)
+		end,
+		-- cursor
+		get = function(c)
+			return c.tbl[c.ix]
+		end,
+		set = function(c,x)
+			local cpy = list_copy(c.tbl)
+			cpy[c.ix] = x
+			return ix_array.create(
+				cpy,
+				c.ix
+			)
+		end,
+		hasprev = function(c)
+			return c.ix > 1
+		end,
+		prev = function(c)
+			return c:hasprev()
+				and ix_array.create(c.tbl, c.ix-1)
+				or  nil
+		end,
+		first = function(c)
+			return ix_array.create(c.tbl, 1)
+		end,
+		hasnext = function(c)
+			return c.ix < #c.tbl
+		end,
+		next = function(c)
+			return c:hasnext()
+				and ix_array.create(c.tbl, c.ix+1)
+				or  nil
+		end,
+		last = function(c)
+			return ix_array.create(c.tbl, #c.tbl)
 		end,
 	}
-end)
+}
+
+function ix_array.create(tbl,ix)
+	return setmetatable({
+		tbl=tbl,
+		ix=ix or 1,
+	}, ix_array_meta)
+end
+
+-- map cursors
+
+function map_cursor(c,f)
+	return {
+		get = function(_)
+			return f(c:get())
+		end,
+		set = function(_,x)
+			return map_cursor(c:set(x), f)
+		end,
+		hasprev = function(_)
+			return c:hasprev()
+		end,
+		prev = function(_)
+			return c:hasprev()
+				and map_cursor(c:prev(), f)
+				or  nil
+		end,
+		first = function(_)
+			return map_cursor(c:first(), f)
+		end,
+		hasnext = function(_)
+			return c:hasnext()
+		end,
+		next = function(_)
+			return c:hasnext()
+				and map_cursor(c:next(), f)
+				or  nil
+		end,
+		last = function(_)
+			return map_cursor(c:last(), f)
+		end,
+		map = function(_,g)
+			return map_cursor(c, compose(f,g))
+		end,
+	}
+end
+
+-- fuse cursors
+
+function fuse_over(cc,f)
+	return fuse_cursor(
+		cc:set(f(cc:get()))
+	)
+end
+
+function fuse_cursor(cc)
+	return {
+		get = function(_)
+			return cc:get():get()
+		end,
+		set = function(_,x)
+			return fuse_over(cc, call("set",x))
+		end,
+		hasprev = function(_)
+			return cc:get():hasprev() or cc:hasprev()
+		end,
+		prev = function(_)
+			return cc:get():hasprev()
+				and fuse_over(cc, call("prev"))
+				or  cc:hasprev()
+					and fuse_over(cc:prev(), call("last"))
+					or  nil
+		end,
+		first = function(_)
+			return fuse_over(cc:first(), call("first"))
+		end,
+		hasnext = function(_)
+			return cc:get():hasnext() or cc:hasnext()
+		end,
+		next = function(_)
+			return cc:get():hasnext()
+				and fuse_over(cc, call("next"))
+				or  cc:hasnext()
+					and fuse_over(cc:next(), call("first"))
+					or  nil
+		end,
+		last = function(_)
+			return fuse_over(cc:last(), call("last"))
+		end,
+		map = function(x, f)
+			return map_cursor(x, f)
+		end,
+	}
+end
+
+function cursor_single(x)
+	return ix_array.create({x})
+end
+
+-->8
+-- scenes
 
 presented_by_scn = flow.once(function(nxt)
 	local ui = ui_layout({
@@ -1155,7 +1267,7 @@ title_scn = flow.once(function(nxt)
 	local is_ready = false
 	
 	local ui = ui_group({		
-		ui_text("swordplay",7)
+		ui_text("SwordPLAY",7)
 			:align("center","center")
 			:effect(draw_with_outline_9(5)),
 		
@@ -1175,7 +1287,7 @@ title_scn = flow.once(function(nxt)
 	
 	return {
 		behavior=behavior.seq({
-			behavior_wait(1),
+			behavior_wait(0.5),
 			input_await_❎,
 			behavior.once(function()
 				is_ready = true
@@ -1232,6 +1344,93 @@ function transition(cur,prv)
 			end			
 		end,
 	}
+end
+-->8
+-- swordplay scene
+game_scn = flow.once(function(nxt)
+	local function sel(opt)
+		cls()
+		print(opt)
+		stop()
+	end
+	
+	local opts = {
+		"how appropriate, you fight like a cow",
+		"uh...",
+	}
+	
+	local ui_curs = menu_list({
+		menu_option(opts[1], sel),
+		menu_option(opts[2], sel),
+	}):map(function(mnu)
+		return ui_layout({
+				ui_group({
+					ui_text("you fight like a dairy farmer", 7)
+						:align("center","center")
+				}):size("fill", 100),
+				mnu,
+			}, "stack", 8)
+			:size("fill","fill")
+			:selectable(mnu.select)
+	end)
+
+	return {
+		draw = function(m)
+			draw_ui(ui_curs:get(), screen_bounds)
+		end,
+		update = function(m,dt)			
+			if btnp(⬆️) and ui_curs:hasprev() then
+				ui_curs = ui_curs:prev()
+			end
+			if btnp(⬇️) and ui_curs:hasnext() then
+				ui_curs = ui_curs:next()
+			end
+			if btnp(❎) then
+				ui_curs:get().select()
+			end
+		end,
+	}
+end)
+
+
+-- menus
+
+function menu_option(txt,cb)
+	local ui = ui_text(txt, 6)
+		:focusable(
+			ui_text("> " .. txt, 7),
+			suspend(cb)(txt)
+		)
+	return cursor_single(
+		ui:focus()
+	)
+end
+
+function menu_list(opts)
+	local function make_stack(x,i)
+		local cs_focus = list_map(opts, function(c,j)
+			return i == j
+				and x
+				or  c:get():blur()
+		end)
+		local cs_blur = list_map(opts, function(c,j)
+			return c:get():blur()
+		end)
+		return ui_layout(cs_blur, "stack", 4)
+			:focusable(
+				ui_layout(cs_focus, "stack", 4),
+				x.select
+			)
+	end
+
+	local curs = ix_array.create(opts)
+		:extend(function(c)			
+			return c:get()
+				:map(function(ui)
+					return make_stack(ui, c.ix):focus()
+				end)
+		end)
+	return fuse_cursor(curs)
 end
 __gfx__
 00000000d11111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
