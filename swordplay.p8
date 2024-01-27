@@ -1702,7 +1702,7 @@ function menu_list(opts)
 end
 
 -->8
--- swordplay scene
+-- swordfighting state
 
 comeback_retorts = {
 	["you fight like a dairy farmer"]
@@ -1719,6 +1719,57 @@ comeback_retorts = {
 --      0.5: even odds
 --      1.0: player wins
 
+start_battle_state = {
+	insults={
+		"you smell!"
+	},
+	retorts={
+		"uh..."
+	},
+	tide=0.5,
+}
+
+function set_has(set,x)
+	return list_any(set,function(y)
+		return x==y
+	end)
+end
+
+function set_add(set,x)
+	if set_has(set,x) then
+		return set
+	end
+	local ret = list_copy(set)
+	add(ret,x)
+	return ret
+end
+
+function set_tide(state,tide)
+	return {
+		insults = state.insults,
+		retorts = state.retorts,
+		tide = tide,
+	}
+end
+
+function add_insult(state,insult)
+	return {
+		insults = set_add(state.insults, insult),
+		retorts = state.retorts,
+		tide = state.tide,
+	}
+end
+
+function add_retort(state,retort)
+	return {
+		insults = state.insults,
+		retorts = set_add(state.retorts,retort),
+		tide = state.tide,
+	}
+end
+
+-->8
+-- swordplay scene
 
 -- attack with an insult
 function attack_flow(state)
@@ -1734,68 +1785,54 @@ function attack_flow(state)
 			remark_flow(insult,state),
 			-- todo: ai responds to insult
 		})
+		:map(const(state))
 	end)
 end
 
 
 
 -- defend from an insult
-function defend_flow(insult,state)
-	return flow.seq({
-		remark_flow(insult,state),
-		menu_flow(
-			retort_menu(
-				insult,
-				state.retorts,
-				state
+function defend_flow(insult)
+	return function(state)
+		return flow.seq({
+			remark_flow(insult,state),
+			menu_flow(
+				retort_menu(
+					insult,
+					state.retorts,
+					state
+				)
 			)
-		)
-	}):flatmap(function(choice)
-		local _,retort = unpack(choice)
-		return remark_flow(retort,state)
-			:map(function()
-				return retort == comeback_retorts[insult]
-					and state.tide + 0.25
-					or  state.tide - 0.25
-			end)
-	end)
+		}):flatmap(function(choice)
+			local _,retort = unpack(choice)
+			local success = retort == comeback_retorts[insult]
+						
+			local new_state = add_insult(
+				set_tide(
+					state,
+					success
+						and state.tide + 0.25
+						or  state.tide - 0.25
+				),
+				insult
+			)
+			
+			return remark_flow(retort,state)
+				:map(const(new_state))
+		end)
+	end
 end
 
-
-
 swordplay_scn = flow_scn(
-	flow.seq({
-		attack_flow({
-			insults={
-				"you smell",
-				"you're no match for my brains, you poor fool.",
-			},
-			retorts={},
-			tide=0.5,
-		}),
-		--
-		defend_flow(
-		"you fight like a dairy farmer",
-		{
-			insults={},
-			retorts={
-				"uh...",
-				"how appropriate, you fight like a cow",
-			},
-			tide=0.25,
-		}),
-		---
-		defend_flow(
-		"i once owned a dog that was smarter than you",
-		{
-			insults={},
-			retorts={
-				"uh...",
-				"he must have taught you everything you know",
-			},
-			tide=0.5,
-		}),
-	}):wrap(ui_scn))
+	flow.of(start_battle_state)
+		:flatmap(attack_flow)
+		:flatmap(defend_flow("you fight like a dairy farmer"))
+		:flatmap(attack_flow)
+		:flatmap(defend_flow("i once owned a dog that was smarter than you"))
+		:flatmap(attack_flow)
+		:flatmap(defend_flow("you fight like a dairy farmer"))
+		:wrap(ui_scn)
+	)
 __gfx__
 00000000000000007077770750555505077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000777777770077700000000000000000000000000000000000000000000000000000000000000000000000000000000000
