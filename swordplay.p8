@@ -806,13 +806,6 @@ function ui.from_rdr(r)
 end
 
 -- prims
-ui_empty = ui.create({
-	offset   = no_offset,
-	min_dims = zeros,
-	dims     = full_dims,
-	draw     = noop,
-})
-
 function ui_box(fill,stroke)
 	return ui.from_draw(function(x,y,w,h)
 		rectfill(x,y,x+w-1,y+h-1,fill)
@@ -1099,6 +1092,13 @@ ui_meta = {
 	}
 }
 
+-- more prims
+ui_empty = ui.create({
+	offset   = no_offset,
+	min_dims = zeros,
+	dims     = full_dims,
+	draw     = noop,
+})
 -->8
 -- game tools
 
@@ -1339,9 +1339,18 @@ menu_box = ui.from_draw(
 	})
 )
 
-function menu_panel(c)
+menu_box_dark = ui.from_draw(
+	box9({
+		{24,26,30,32},
+		{0,2,6,8}
+	})
+)
+
+function menu_panel(c, col)
 	return ui_group({
-		menu_box,
+		col == "dark"
+			and menu_box_dark
+			or  menu_box,
 		c:inset(4)
 	})
 end
@@ -1365,6 +1374,41 @@ function text_reveal(str,col,len)
 			end
 		})
 	end):memo(hash_dims))
+end
+
+-- scenes & flow --------------
+
+-- wrap a flow as a scene
+function flow_scn(flw)
+	return flow.once(function(nxt)
+		local scn = nil
+		flw.go(
+			function(s)
+				scn = s
+			end,
+			nxt
+		)
+		return {
+			update=function(_,dt)
+				scn:update(dt)
+			end,
+			draw=function(_)
+				scn:draw()
+			end,
+		}
+	end)
+end
+
+-- wrap a ui component as a scn
+function ui_scn(c)
+	return {
+		update=function(scn,dt)
+			c:update(dt)
+		end,
+		draw=function(scn)
+			draw_ui(c, screen_bounds)
+		end,
+	}
 end
 -->8
 -- scenes
@@ -1439,28 +1483,6 @@ title_scn = flow.once(function(nxt)
 	}
 end)
 
-
--- wrap a flow as a scene
-function flow_scn(flw)
-	return flow.once(function(nxt)
-		local scn = nil
-		flw.go(
-			function(s)
-				scn = s
-			end,
-			nxt
-		)
-		return {
-			update=function(_,dt)
-				scn:update(dt)
-			end,
-			draw=function(_)
-				scn:draw()
-			end,
-		}
-	end)
-end
-
 -- scene transitions
 
 function transition_flow(f)
@@ -1520,6 +1542,21 @@ function text_flow(text)
 	end)
 end
 
+function remark_flow(text)
+	local menu_height = 48
+	return text_flow(text)
+		:wrap(function(c)
+			return ui_layout({
+					ui_group({
+						c:align("center","center")
+					}):size("fill", 128 - menu_height),
+					
+					menu_panel(ui_empty, "dark")
+						:size("fill", menu_height),
+				}, "stack")
+				:size("fill","fill")
+		end)
+end
 
 function menu_flow(menu)	
 	return flow.create(function(nxt,done)
@@ -1557,10 +1594,11 @@ function swordplay_menu(remark, retorts)
 	:map(function(mnu)
 		return ui_layout({
 				ui_group({
-					ui_wrap_text(remark, 6)
+					ui_wrap_text(remark, 5)
 						:align("center","center")
 				}):size("fill", 128 - menu_height),
-				menu_panel(mnu)
+			
+				menu_panel(mnu, "light")
 					:size("fill", menu_height),
 			}, "stack")
 			:size("fill","fill")
@@ -1631,7 +1669,7 @@ end
 
 swordplay_scn = flow_scn(
 	flow.seq({
-		text_flow("you fight like a dairy farmer"),
+		remark_flow("you fight like a dairy farmer"),
 		menu_flow(
 			swordplay_menu(
 				"you fight like a dairy farmer",
@@ -1642,10 +1680,10 @@ swordplay_scn = flow_scn(
 			)
 		):flatmap(function(choice)
 			local remark,retort = unpack(choice)
-			return text_flow(retort)
+			return remark_flow(retort)
 		end),
 		---
-		text_flow("i once owned a dog that was smarter than you"),
+		remark_flow("i once owned a dog that was smarter than you"),
 		menu_flow(
 			swordplay_menu(
 				"i once owned a dog that was smarter than you",
@@ -1656,19 +1694,9 @@ swordplay_scn = flow_scn(
 			)
 		):flatmap(function(choice)
 			local remark,retort = unpack(choice)
-			return text_flow(retort)
+			return remark_flow(retort)
 		end),
-	}):wrap(function(ui)
-		return {
-			update=function(scn,dt)
-				ui:update(dt)
-			end,
-			draw=function(scn)
-				draw_ui(ui, screen_bounds)
-			end,
-		}
-	end)
-)
+	}):wrap(ui_scn))
 __gfx__
 00000000000000007077770750555505000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
