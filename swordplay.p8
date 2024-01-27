@@ -1355,6 +1355,23 @@ function menu_panel(c, col)
 	})
 end
 
+function swordplay_ui(top,mnu,opts)
+	local opts = opts or { col="light" }
+	local menu_height = 48
+
+	return ui_layout({
+			-- top part
+			ui_group({
+				top:align("center","center")
+			}):size("fill", 128 - menu_height),
+			-- menu part
+			menu_panel(mnu, opts.col or "light")
+				:size("fill", menu_height),
+		}, "stack")
+		:size("fill","fill")
+		:selectable(mnu.select)
+end
+
 function text_reveal(str,col,len)
 	return ui.from_rdr(rdr(function(dims)
 		local w,h = unpack(dims)
@@ -1378,7 +1395,25 @@ end
 
 -- scenes & flow --------------
 
--- wrap a flow as a scene
+-- wrap text reveal into a flow
+function text_flow(text)
+	return flow.once(function(nxt)
+		local t = 0
+		local spd = 20
+		local function len()
+			return t*spd
+		end
+		return text_reveal(text,7,len)
+			:updatable(function(scn,dt)			
+				t += dt
+				if t > #text/spd + 0.5 then
+					nxt()
+				end
+			end)
+	end)
+end
+
+-- wrap a flow as a scene flow
 function flow_scn(flw)
 	return flow.once(function(nxt)
 		local scn = nil
@@ -1409,6 +1444,28 @@ function ui_scn(c)
 			draw_ui(c, screen_bounds)
 		end,
 	}
+end
+
+-- wrap a cursor as a flow
+function menu_flow(menu)	
+	return flow.create(function(nxt,done)
+		local function make_ui(curs)
+			return curs:get()
+				:updatable(function(scn,dt)
+					if btnp(⬆️) and curs:hasprev() then
+						nxt(make_ui(curs:prev()))
+					end
+					if btnp(⬇️) and curs:hasnext() then
+						nxt(make_ui(curs:next()))
+					end
+					if btnp(❎) then
+						done(curs:get().select())
+					end
+				end)
+		end
+		
+		nxt(make_ui(menu))
+	end)
 end
 -->8
 -- scenes
@@ -1525,84 +1582,35 @@ end
 -->8
 -- swordplay flows
 
-function text_flow(text)
-	return flow.once(function(nxt)
-		local t = 0
-		local spd = 20
-		local function len()
-			return t*spd
-		end
-		return text_reveal(text,7,len)
-			:updatable(function(scn,dt)			
-				t += dt
-				if t > #text/spd + 0.5 then
-					nxt()
-				end
-			end)
-	end)
-end
-
 function remark_flow(text)
-	local menu_height = 48
 	return text_flow(text)
 		:wrap(function(c)
-			return ui_layout({
-					ui_group({
-						c:align("center","center")
-					}):size("fill", 128 - menu_height),
-					
-					menu_panel(ui_empty, "dark")
-						:size("fill", menu_height),
-				}, "stack")
-				:size("fill","fill")
+				return swordplay_ui(
+					c,
+					ui_empty,
+					{col="dark"}
+				)
 		end)
-end
-
-function menu_flow(menu)	
-	return flow.create(function(nxt,done)
-		local function make_ui(curs)
-			return curs:get()
-				:updatable(function(scn,dt)
-					if btnp(⬆️) and curs:hasprev() then
-						nxt(make_ui(curs:prev()))
-					end
-					if btnp(⬇️) and curs:hasnext() then
-						nxt(make_ui(curs:next()))
-					end
-					if btnp(❎) then
-						done(curs:get().select())
-					end
-				end)
-		end
-		
-		nxt(make_ui(menu))
-	end)
 end
 
 -- swordplay ui
 
 function swordplay_menu(remark, retorts)
-	local menu_height = 48
-
 	return menu_list(
-		retorts:map(function(retort)
-			return menu_option(retort, function()
-				return {remark,retort}
+		list.from_tbl(retorts)
+			:map(function(retort)
+				return menu_option(retort, function()
+					return {remark,retort}
+				end)
 			end)
-		end)
 	)
 	:map(function(mnu)
-		return ui_layout({
-				ui_group({
-					ui_wrap_text(remark, 5)
-						:align("center","center")
-				}):size("fill", 128 - menu_height),
-			
-				menu_panel(mnu, "light")
-					:size("fill", menu_height),
-			}, "stack")
-			:size("fill","fill")
-			:selectable(mnu.select)
+		local top = ui_wrap_text(remark, 5)
+		return swordplay_ui(
+			top,
+			mnu,
+			{col="light"}
+		)
 	end)
 end
 
