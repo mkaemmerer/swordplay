@@ -5,12 +5,12 @@ __lua__
 --by mabbees
 
 -- todos
+--  ui: text reveal
+--  ui: cool looking menu
 --  flow: retorts & counters
 --  flow: unlock responses
---  ui: cool looking menu
---  ui: text reveal
 --  sfx: beep speak
---  music: music
+--  music: battle music
 --  anim: battle animations
 --  story: make some jokes
 
@@ -28,7 +28,7 @@ function _init()
 		flow.loop(
 			flow.seq({
 --				title_scn,
-				game_scn,
+				swordplay_scn,
 			})
 		),
 	})
@@ -399,6 +399,15 @@ flow_meta={
 		   end)
 		  end)
 		end,
+		wrap=function(m,f)
+			return flow.create(
+				function(nxt,done)
+					m.go(function(x)
+						nxt(f(x))
+					end, done)
+				end
+			)
+		end
 	}
 }
 
@@ -700,26 +709,6 @@ end
 
 
 -- text utils -----------------
-function text_width(txt)
-	local w = print(txt, 0, -1000)
-	cursor()
-	return w
-end
-
-function text_height(txt)	
-	-- todo: wrong result
-	-- when txt has p8scii
-	-- tall mode turned on
-	local height=6
-	for i=1,#txt do
-		local c = txt[i]
-		if c=="\n" then
-			height += 6
-		end
-	end
-	return height
-end
-
 function wrap_lines(txt,width)
 	local buffer=""
 	local len = 0
@@ -732,16 +721,18 @@ function wrap_lines(txt,width)
 			len=w
 		else
 			-- next word still fits on the line
-			if txt[i-1] == "\n" then
-				-- word break is also a line break
-				buffer = buffer.." "..word.."\n"
-				len=0
-			else
-				-- word break is a space
-				local sep = len == 0 and "" or " "
-				buffer = buffer..sep..word
-				len += w + word_width(sep)
-			end
+			buffer = buffer..word
+			len += w
+		end
+		
+		if txt[i-1] == "\n" then
+			-- word break is also a line break
+			buffer = buffer.."\n"
+			len=0
+		else
+			-- word break is a space
+			buffer = buffer.." "
+			len += 4
 		end
 	end
 	
@@ -761,10 +752,38 @@ function words(txt)
 	return iter, txt, 1
 end
 
-function word_width(txt)
-	return 4 * #txt
+function word_width(word)
+	-- todo: adjust for special
+	-- characters, but don't call
+	-- "print" because it is slow
+	
+	-- hacks for special characters
+	if word[1] == "❎" or word[1] == "🅾️" then
+		return 3 + 4 * #word
+	end
+	
+	return 4 * #word
 end
 
+function text_width(txt)
+	local w = print(txt, 0, -1000)
+	cursor()
+	return w
+end
+
+function text_height(txt)	
+	-- todo: wrong result
+	-- when txt has p8scii
+	-- tall mode turned on
+	local height=6
+	for i=1,#txt do
+		local c = txt[i]
+		if c=="\n" then
+			height += 6
+		end
+	end
+	return height
+end
 
 
 -- ui components --------------
@@ -1443,59 +1462,83 @@ function transition(cur,prv)
 end
 -->8
 -- swordplay scene
-game_scn = flow.once(function(nxt)		
-	local mnu_flow = flow.loop(
-		flow.seq({
-			swordplay_menu(
-				"you fight like a dairy farmer",
-				list.from_tbl({
-					"how appropriate, you fight like a cow",
-					"uh...",
-				})
-			),
-			swordplay_menu(
-				"i once owned a dog that was smarter than you",
-				list.from_tbl({
-					"he must have taught you everything you know",
-					"uh...",
-				})
-			)
-		})
-	)
-	
-	local ui_curs = nil
-	mnu_flow.go(
-		function(s)
- 		ui_curs = s
-		end,
-		noop
-	)
 
-	return {
-		draw = function(m)
-			draw_ui(ui_curs:get(), screen_bounds)
-		end,
-		update = function(m,dt)			
-			if btnp(⬆️) and ui_curs:hasprev() then
-				ui_curs = ui_curs:prev()
+function run_txt(text)
+	return flow.once(function(nxt)
+		local t = 0
+		local function len()
+			return t*20
+		end
+		local ui = text_reveal(text,7,len)
+		
+		return {
+			draw = function(scn)
+				draw_ui(ui, screen_bounds)
+			end,
+			update = function(scn,dt)			
+				t += dt
+				if len() > #text then
+					nxt()
+				end
+			end,
+		}
+	end)
+end
+
+function run_menu(create_menu)	
+	return flow.once(function(nxt)
+		local ui_curs = create_menu(nxt)
+		return {
+			draw = function(scn)
+				draw_ui(ui_curs:get(), screen_bounds)
+			end,
+			update = function(scn,dt)			
+				if btnp(⬆️) and ui_curs:hasprev() then
+					ui_curs = ui_curs:prev()
+				end
+				if btnp(⬇️) and ui_curs:hasnext() then
+					ui_curs = ui_curs:next()
+				end
+				if btnp(❎) then
+					ui_curs:get().select()
+				end
+			end,
+		}
+	end)
+end
+
+-- gameplay segments
+
+function text_reveal(str,col,len)
+	return ui.from_rdr(rdr(function(dims)
+		local w,h = unpack(dims)
+		local txt = wrap_lines(str,w)
+		local dims = rdr(const({
+			text_width(txt),
+			text_height(txt)-1
+		}))
+		return ui.create({
+			offset   = no_offset,
+			min_dims = dims,
+			dims     = dims,
+			draw=function(c,bnds)
+				local show_str = sub(txt,0,len())
+				local x,y=unpack(bnds)
+				print(show_str,x,y,col)
 			end
-			if btnp(⬇️) and ui_curs:hasnext() then
-				ui_curs = ui_curs:next()
-			end
-			if btnp(❎) then
-				ui_curs:get().select()
-			end
-		end,
-	}
-end)
+		})
+	end):memo(hash_dims))
+end
 
 function swordplay_menu(remark, retorts)
 	local menu_height = 48
 
-	return flow.once(function(nxt)		
+	return function(nxt)		
 		return menu_list(
 			retorts:map(function(retort)
-				return menu_option(retort, nxt)
+				return menu_option(retort, function()
+					nxt({remark,retort})
+				end)
 			end)
 		)
 		:map(function(mnu)
@@ -1510,7 +1553,7 @@ function swordplay_menu(remark, retorts)
 				:size("fill","fill")
 				:selectable(mnu.select)
 		end)
-	end)
+	end
 end
 
 
@@ -1570,6 +1613,38 @@ function menu_list(opts)
 		end)
 	return fuse_cursor(curs)
 end
+-->8
+-- swordplay scene
+
+swordplay_scn = flow.seq({
+	run_txt("you fight like a dairy farmer"),
+	run_menu(
+		swordplay_menu(
+			"you fight like a dairy farmer",
+			list.from_tbl({
+				"how appropriate, you fight like a cow",
+				"uh...",
+			})
+		)
+	):flatmap(function(choice)
+		local remark,retort = unpack(choice)
+		return run_txt(retort)
+	end),
+	---
+	run_txt("i once owned a dog that was smarter than you"),
+	run_menu(
+		swordplay_menu(
+			"i once owned a dog that was smarter than you",
+			list.from_tbl({
+				"he must have taught you everything you know",
+				"uh...",
+			})
+		)
+	):flatmap(function(choice)
+		local remark,retort = unpack(choice)
+		return run_txt(retort)
+	end),
+})
 __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
