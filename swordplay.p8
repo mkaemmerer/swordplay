@@ -1704,22 +1704,48 @@ end
 -->8
 -- swordplay scene
 
--- create a battle flow
--- * btl:
---   * remark
---   * retort
--- * state:
+comeback_retorts = {
+	["you fight like a dairy farmer"]
+		= "how appropriate, you fight like a cow",
+	["i once owned a dog that was smarter than you"]
+		= "he must have taught you everything you know",
+}
+
+-- battle state:
+--   * insults - available insults
 --   * retorts - available retorts
 --   * tide - the "tide" of battle
 --      0.0: player loses
 --      0.5: even odds
 --      1.0: player wins
-function battle_flow(btl,state)
+
+
+-- attack with an insult
+function attack_flow(state)
+	return menu_flow(
+		retort_menu(
+			"",
+			state.insults,
+			state
+		)
+	):flatmap(function(choice)
+		local _,insult = unpack(choice)
+		return flow.seq({
+			remark_flow(insult,state),
+			-- todo: ai responds to insult
+		})
+	end)
+end
+
+
+
+-- defend from an insult
+function defend_flow(insult,state)
 	return flow.seq({
-		remark_flow(btl.remark,state),
+		remark_flow(insult,state),
 		menu_flow(
 			retort_menu(
-				btl.remark,
+				insult,
 				state.retorts,
 				state
 			)
@@ -1728,19 +1754,30 @@ function battle_flow(btl,state)
 		local _,retort = unpack(choice)
 		return remark_flow(retort,state)
 			:map(function()
-				return retort == btl.retort
+				return retort == comeback_retorts[insult]
 					and state.tide + 0.25
 					or  state.tide - 0.25
 			end)
 	end)
 end
 
+
+
 swordplay_scn = flow_scn(
 	flow.seq({
-		battle_flow({
-			remark="you fight like a dairy farmer",
-			retort="how appropriate, you fight like a cow",
-		},{
+		attack_flow({
+			insults={
+				"you smell",
+				"you're no match for my brains, you poor fool.",
+			},
+			retorts={},
+			tide=0.5,
+		}),
+		--
+		defend_flow(
+		"you fight like a dairy farmer",
+		{
+			insults={},
 			retorts={
 				"uh...",
 				"how appropriate, you fight like a cow",
@@ -1748,10 +1785,10 @@ swordplay_scn = flow_scn(
 			tide=0.25,
 		}),
 		---
-		battle_flow({
-			remark="i once owned a dog that was smarter than you",
-			retort="how appropriate, you fight like a cow",
-		},{
+		defend_flow(
+		"i once owned a dog that was smarter than you",
+		{
+			insults={},
 			retorts={
 				"uh...",
 				"he must have taught you everything you know",
