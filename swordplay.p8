@@ -1710,6 +1710,8 @@ comeback_retorts = {
 		= "how appropriate, you fight like a cow",
 	["i once owned a dog that was smarter than you"]
 		= "he must have taught you everything you know",
+	["you smell!"]
+		= "...is that the best you got?"
 }
 
 -- invert the table
@@ -1777,8 +1779,8 @@ function add_retort(state,retort)
 end
 
 function resolve_attack(state,insult,retort)
-	local success = retort == comeback_retorts[insult]
-	-- learn new returt,
+	local success = not (retort == comeback_retorts[insult])
+	-- learn new retort,
 	-- update the battle
 	local new_state = add_retort(
 		set_tide(
@@ -1829,7 +1831,8 @@ enemy_1 = {
 	},
 	retorts = {
 		"how appropriate, you fight like a cow",
-		"he must have taught you everything you know"
+		"he must have taught you everything you know",
+		"...is that the best you got?"
 	}
 }
 
@@ -1839,7 +1842,8 @@ enemy_2 = {
 		"i once owned a dog that was smarter than you"		
 	},
 	retorts = {
-		"he must have taught you everything you know"
+		"he must have taught you everything you know",
+		"...is that the best you got?"
 	}
 }
 -->8
@@ -1955,6 +1959,25 @@ swordplay_scn = flow_scn(
 		"enemy"
 	)
 		:wrap(ui_scn)
+		:map(function(res)
+			if res == "victory" then
+				return ui_group({
+					ui_text("victory", 7)
+						:align("center","center")
+				}):size("fill","fill")
+			end
+			if res == "defeat" then
+				return ui_group({
+						ui_text("defeat", 7)
+							:align("center","center")
+					}):size("fill","fill")
+			end
+		end)
+		:flatmap(function(c)
+			return flow.once(
+				const(ui_scn(c))
+			)
+		end)
 )
 __gfx__
 00000000000000007077770750555505077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000
