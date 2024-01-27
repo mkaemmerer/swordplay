@@ -5,7 +5,6 @@ __lua__
 --by mabbees
 
 -- todos
---  ui: text reveal
 --  ui: cool looking menu
 --  flow: retorts & counters
 --  flow: unlock responses
@@ -24,10 +23,10 @@ function _init()
 
 	-- flow
 	local game_flow = flow.seq({
---		presented_by_scn,
+		presented_by_scn,
 		flow.loop(
 			flow.seq({
---				title_scn,
+				title_scn,
 				swordplay_scn,
 			})
 		),
@@ -60,7 +59,6 @@ end
 -- * algebraic functions
 -- * list
 -- * reader
--- * 2d vector
 -- * flow
 -- * behavior
 -- * drawing
@@ -320,63 +318,6 @@ rdr_local=function(f,r)
 		return r.run(f(e))
 	end)
 end
-
-
--- 2d vector ------------------
-function v_len(v)
-	return sqrt(v:dot(v))
-end
-
-function v_unit(v)
-	return v * (1/v:len())
-end
-
-v2_meta={
-	__mul=function(a,b)
-		if type(b) == "number" then
-			return a:scale(b)
-		end
-		if type(a) == "number" then
-			return b:scale(a)
-		end
-	end,
-	__add=function(u,v)
-		return u:add(v)
-	end,
-	__sub=function(u,v)
-		return u:sub(v)
-	end,
-	__index={
-		len=v_len,
-		unit=v_unit,
-		add=function(u,v)
-			return v2(u.x+v.x, u.y+v.y)
-		end,
-		sub=function(u,v)
-			return v2(u.x-v.x, u.y-v.y)
-		end,
-		dot=function(u,v)
-			return u.x*v.x + u.y*v.y
-		end,
-		scale=function(v,s)
-			return v2(v.x*s, v.y*s)
-		end,
-		unpack=function(v)
-			return v.x,v.y
-		end
-	},
-}
-
-function v2(x,y)
-	return setmetatable(
-		{x=x,y=y},
-		v2_meta
-	)
-end
-
-v_zero = v2(0,0)
-v_x = v2(1,0)
-v_y = v2(0,1)
 
 
 -- flow -----------------------
@@ -1347,6 +1288,33 @@ function cursor_single(x)
 	return ix_array.create({x})
 end
 
+-- draw fucntions -------------
+
+function box9(coords)
+	local xs,ys = unpack(coords)
+	local sx0,sx1,sx2,sx3 = unpack(xs)
+	local sy0,sy1,sy2,sy3 = unpack(ys)
+	
+	return function(x,y,w,h)
+		local sw0,sw1,sw2 = sx1-sx0, sx2-sx1, sx3-sx2
+		local sh0,sh1,sh2 = sy1-sy0, sy2-sy1, sy3-sy2
+		local dx0,dx1,dx2,dx3 = x,x+sw0,x+w-sw2,x+w
+		local dy0,dy1,dy2,dy3 = y,y+sh0,y+h-sh2,y+h
+		local dw0,dw1,dw2 = dx1-dx0,dx2-dx1,dx3-dx2
+		local dh0,dh1,dh2 = dy1-dy0,dy2-dy1,dy3-dy2
+		
+		sspr(sx0, sy0, sw0, sh0, dx0, dy0, dw0, dh0)
+		sspr(sx1, sy0, sw1, sh0, dx1, dy0, dw1, dh0)
+		sspr(sx2, sy0, sw2, sh0, dx2, dy0, dw2, dh0)
+		sspr(sx0, sy1, sw0, sh1, dx0, dy1, dw0, dh1)
+		sspr(sx1, sy1, sw1, sh1, dx1, dy1, dw1, dh1)
+		sspr(sx2, sy1, sw2, sh1, dx2, dy1, dw2, dh1)
+		sspr(sx0, sy2, sw0, sh2, dx0, dy2, dw0, dh2)
+		sspr(sx1, sy2, sw1, sh2, dx1, dy2, dw1, dh2)
+		sspr(sx2, sy2, sw2, sh2, dx2, dy2, dw2, dh2)
+	end
+end
+
 -->8
 -- scenes
 
@@ -1461,9 +1429,9 @@ function transition(cur,prv)
 	}
 end
 -->8
--- swordplay scene
+-- swordplay ui
 
-function run_txt(text)
+function text_flow(text)
 	return flow.once(function(nxt)
 		local t = 0
 		local function len()
@@ -1485,7 +1453,7 @@ function run_txt(text)
 	end)
 end
 
-function run_menu(create_menu)	
+function menu_flow(create_menu)	
 	return flow.once(function(nxt)
 		local ui_curs = create_menu(nxt)
 		return {
@@ -1617,8 +1585,8 @@ end
 -- swordplay scene
 
 swordplay_scn = flow.seq({
-	run_txt("you fight like a dairy farmer"),
-	run_menu(
+	text_flow("you fight like a dairy farmer"),
+	menu_flow(
 		swordplay_menu(
 			"you fight like a dairy farmer",
 			list.from_tbl({
@@ -1631,8 +1599,8 @@ swordplay_scn = flow.seq({
 		return run_txt(retort)
 	end),
 	---
-	run_txt("i once owned a dog that was smarter than you"),
-	run_menu(
+	text_flow("i once owned a dog that was smarter than you"),
+	menu_flow(
 		swordplay_menu(
 			"i once owned a dog that was smarter than you",
 			list.from_tbl({
@@ -1646,14 +1614,14 @@ swordplay_scn = flow.seq({
 	end),
 })
 __gfx__
+00000000000000007077770700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700000000007000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000070000007000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000777777777000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700070000007000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000070000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00077000777777770000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00700700070000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000007077770700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
