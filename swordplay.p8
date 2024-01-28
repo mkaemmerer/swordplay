@@ -7,12 +7,10 @@ __lua__
 -- todos
 --  ui: scroll for more opts?
 --  flow: retorts & counters
---  flow: unlock responses
 --  ai: pirates to fight
 --  sfx: beep speak
 --  music: battle music
 --  anim: battle animations
---  anim: scene transitions
 --  story: make some jokes
 
 -- global constants
@@ -64,6 +62,7 @@ end
 -- * flow
 -- * behavior
 -- * drawing
+-- * easing
 -- * text utils
 -- * ui components
 
@@ -650,6 +649,27 @@ function draw_with_shadow(col,dx,dy)
 	end)
 end
 
+-- easing ---------------------
+
+ease = {}
+
+function ease.linear(x)
+	return x
+end
+
+function	ease.quad_in(x)
+	return x * x
+end
+
+function ease.quad_out(x)
+	return 1 - (1 - x) * (1 - x)
+end
+
+function ease.quad_in_out(x)
+	return x < 0.5
+		and 2 * x * x
+		or  1 - (-2*x + 2)^2 / 2
+end
 
 -- text utils -----------------
 function wrap_lines(txt,width)
@@ -1143,6 +1163,186 @@ input_await_❎🅾️ = behavior.par({
 })
 
 
+-- grids ----------------------
+
+function idx_grid(rows,cols)
+	return pair(
+		list.from_range(1,cols),
+		list.from_range(1,rows)
+	)
+end
+
+function square_grid(size,rows,cols)
+	return idx_grid(rows,cols)
+		:map(function(tbl)
+			local i,j = unpack(tbl)
+			return {
+				(i-0.5)*size,
+				(j-0.5)*size,
+				i,
+				j,
+			}
+		end)
+end
+
+function diamond_grid(size,rows,cols)
+	local s = size*sqrt(2)
+	local dx = s
+	local dy = s/2
+	
+	return idx_grid(rows,cols)
+		:map(function(tbl)
+			local i,j = unpack(tbl)
+			return {
+				(i-1)*dx + (j%2)*0.5*dx,
+				(j-0.5)*dy,
+				i,
+				j,
+			}
+		end)
+end
+
+function hex_grid(size,rows,cols)
+	local dx = flr(sqrt(3) * 0.666 * size)
+	local dy = size
+	
+	return idx_grid(rows,cols)
+		:map(function(tbl)
+			local i,j = unpack(tbl)
+			return {
+				(i-1)*dx + (j%2)*0.5*dx,
+				(j-0.5)*dy,
+				i,
+				j,
+			}
+		end)
+end
+
+
+function draw_grid(grid)
+	foreach(grid, function(p)
+		local x,y = unpack(p)
+		pset(x,y,14)
+	end)
+end
+
+-- dot fields -----------------
+
+dots = {}
+
+-- dot transforms
+
+function dots.transform(f)
+	return function(dots)
+		return compose(f,dots)
+	end
+end
+
+function dots.map(f)
+	return function(dots)
+		return compose(dots,f)
+	end
+end
+
+function dots.translate(dx,dy)
+	return dots.transform(function(t,x,y)
+		return t,x-dx,y-dy
+	end)
+end
+
+function dots.rotate(angle)
+	return dots.transform(function(t,x,y)
+		local c,s = cos(angle),sin(angle)
+		local xx = c*x + s*y
+		local yy = s*x - c*y
+		return t,xx,yy
+	end)
+end
+
+function dots.scale(sx,sy)
+	sy = sy or sx
+	return dots.transform(function(t,x,y)
+		local xx = x/sx
+		local yy = y/sy
+		return t,xx,yy
+	end)
+end
+
+dots.flip_x = dots.scale(-1,1)
+
+dots.flip_y = dots.scale(1,-1)
+
+function dots.timeshift_x(fac)
+	return dots.transform(function(t,x,y)
+		return t+fac*x,x,y
+	end)
+end
+
+function dots.timeshift_y(fac)
+	return dots.transform(function(t,x,y)
+		return t+fac*y,x,y
+	end)
+end
+
+function dots.ease(f)
+	return dots.transform(function(t,x,y)
+		return f(t),x,y
+	end)
+end
+
+function dots.mul(k)
+	return dots.map(function(v)
+		return k*v
+	end)
+end
+
+function dots.time(t,x,y)
+	return t
+end
+
+function dots.x(t,x,y)
+	return x
+end
+
+function dots.y(t,x,y)
+	return y
+end
+
+function dots.dist(t,x,y)
+	return sqrt(x*x + y*y)
+end
+
+--
+
+function draw_dots(grid,field)
+	return function(t)
+		foreach(grid, function(p)
+			local x,y = unpack(p)
+			local r = field(t,x,y)
+			circfill(x,y,r)
+		end)
+	end
+end
+
+-- transitions ----------------
+
+scale_to_grid = chain({
+	dots.translate(0.5,0.5),
+	dots.scale(128),
+	dots.map(function(v)
+		return min(v,1)
+	end),
+	dots.mul(16),
+})
+
+wipe_left = chain({
+	dots.timeshift_x(2),
+	dots.timeshift_y(1),
+	dots.ease(function(t)
+		return (t*3.5)-1.25
+	end),
+})(dots.time)
+
 
 -- cursors --------------------
 
@@ -1590,6 +1790,10 @@ end
 function transition(cur,prv)
 	local t = 0
 	local dur = 1
+	
+	local field = wipe_left
+	local grid = diamond_grid(16,12,9)
+	
 	return {
 		update=function(scn,dt)
 			if t < 0.5*dur and prv then
@@ -1604,10 +1808,28 @@ function transition(cur,prv)
 				-- draw "out" transition
 				local fac = 1 - 2*t/dur
 				prv:draw()
+				-- transition
+				color(5)
+				draw_dots(
+					grid,
+					chain({
+						dots.scale(1,-1),
+						scale_to_grid,
+					})(field)
+				)(1-fac)
 			elseif t < dur and prv then
 				-- draw "in" transition
 				local fac = 2*(t-0.5*dur)/dur
 				cur:draw()
+				-- transition
+				color(5)
+				draw_dots(
+					grid,
+					chain({
+						dots.scale(-1,1),
+						scale_to_grid,
+					})(field)
+				)(1-fac)
 			else
 				cur:draw()
 			end			
