@@ -1850,6 +1850,30 @@ function remark_flow(text,state)
 		end)
 end
 
+function battle_intro_flow(number)
+	return flow.once(function(nxt)
+		local ui = ui_group({
+				ui_text("battle "..number, 7)
+					:align("center","center")
+			}):size("fill","fill")
+		
+		return {
+			behavior=behavior.seq({
+				behavior_wait(2),
+				behavior.once(nxt),
+				behavior.never
+			}),
+			update=function(scn,dt)
+				scn.behavior = scn.behavior.update(scn,dt)
+			end,
+			draw=function(scn)
+				draw_ui(ui, screen_bounds)
+			end,
+		}
+	end)
+end
+
+
 function victory_flow()
 	local victory_screen = ui_group({
 		ui_text("victory", 7)
@@ -2261,11 +2285,12 @@ all_enemies = {
 	enemy_2
 }
 
-function swordplay(enemies, state)
-	if #enemies == 0 then
+function swordplay(battle_num, enemies, state)
+	if battle_num > #enemies then
 		-- todo final victory screen
 		-- or boss fight...
 		return victory_flow()
+			:wrap(ui_scn)
 	end
 	
 	local function handle_battle(r)
@@ -2291,28 +2316,43 @@ function swordplay(enemies, state)
 	local function handle_next(r)
 		local res,next_state = unpack(r)
 		
-		if res == "continue" then
-			local next_enemies = list_tail(enemies)
-			return swordplay(next_enemies, next_state)
+		if res == "next" then
+			return swordplay(
+				battle_num+1,
+				enemies,
+				next_state
+			)
 		end
 		if res == "restart" then
 			return flow.of(nil)
 		end
 		if res == "retry" then
 			-- todo reorder enemies?
-			return swordplay(all_enemies, next_state)
+			return swordplay(
+				1,
+				all_enemies,
+				next_state
+			)
 		end
 	end
 	
-	return flow_scn(
-			battle(start_battle(state), enemies[1], "enemy")
+	return flow.seq({
+		battle_intro_flow(battle_num),
+		flow_scn(
+			battle(
+				start_battle(state),
+				enemies[1],
+				"enemy"
+			)
 				:flatmap(handle_battle)
 				:wrap(ui_scn)
 		)
-		:flatmap(handle_next)	
+	})
+	:flatmap(handle_next)	
 end
 
 swordplay_scn = swordplay(
+	1,
 	all_enemies,
 	start_battle_state
 )
