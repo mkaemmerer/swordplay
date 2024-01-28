@@ -7,6 +7,7 @@ __lua__
 -- todos:
 --  battle system:
 --   - don't allow repeats
+--   - lose after running out?
 --   - lose after one fail?
 --  story:
 --   - boss fight with innuendo
@@ -1983,7 +1984,7 @@ end
 
 function retort_menu(remark, retorts, state)
 	return menu_list(
-		list.from_tbl(retorts)
+		retorts
 			:map(function(retort)
 				return menu_option(retort, function()
 					return {remark,retort}
@@ -2132,47 +2133,53 @@ function set_add(set,x)
 	return ret
 end
 
-function set_tide(state,tide)
-	return {
-		insults = state.insults,
-		retorts = state.retorts,
-		tide = tide,
-	}
+function set_tide(tide)
+	return function(state)
+		return {
+			insults = state.insults,
+			retorts = state.retorts,
+			tide = tide,
+		}
+	end
 end
 
 function start_battle(state)
-	return set_tide(state,0.5)
+	return set_tide(0.5)(state)
 end
 
-function add_insult(state,insult)
-	return {
-		insults = set_add(state.insults, insult),
-		retorts = state.retorts,
-		tide = state.tide,
-	}
+function learn_insult(insult)
+	return function(state)
+		return {
+			insults = set_add(state.insults, insult),
+			retorts = state.retorts,
+			tide = state.tide,
+		}
+	end
 end
 
-function add_retort(state,retort)
-	return {
-		insults = state.insults,
-		retorts = set_add(state.retorts,retort),
-		tide = state.tide,
-	}
+function learn_retort(retort)
+	return function(state)
+		return {
+			insults = state.insults,
+			retorts = set_add(state.retorts,retort),
+			tide = state.tide,
+		}
+	end
 end
 
 function resolve_attack(state,insult,retort)
 	local success = not (retort == comeback_retorts[insult])
 	-- learn new retort,
 	-- update the battle
-	local new_state = add_retort(
+	local new_state = chain({
+		learn_retort(retort),
 		set_tide(
-			state,
 			success
 				and state.tide + 0.25
 				or  state.tide - 0.25
 		),
-		retort
-	)
+	})(state)
+
 	return new_state
 end
 
@@ -2180,15 +2187,15 @@ function resolve_defend(state,insult,retort)
 	local success = retort == comeback_retorts[insult]
 	-- learn new insult,
 	-- update the battle
-	local new_state = add_insult(
+	local new_state = chain({
+		learn_insult(insult),
 		set_tide(
-			state,
 			success
 				and state.tide + 0.25
 				or  state.tide - 0.25
 		),
-		insult
-	)
+	})(state)
+	
 	return new_state
 end
 
@@ -2234,10 +2241,16 @@ enemy_2 = {
 -- player adapter
 player_adapter = {
 	get_insult = function(state)
+		local available_insults =
+			list.from_tbl(state.insults)
+				:filter(function(r)
+					return true
+				end)
+	
 		return menu_flow(
 			retort_menu(
 				"",
-				state.insults,
+				available_insults,
 				state
 			)
 		):map(function(choice)
@@ -2246,10 +2259,16 @@ player_adapter = {
 		end)
 	end,
 	get_retort = function(state,insult)
+		local available_retorts =
+			list.from_tbl(state.retorts)
+				:filter(function(r)
+					return true
+				end)
+		
 		return menu_flow(
 			retort_menu(
 				insult,
-				state.retorts,
+				available_retorts,
 				state
 			)
 		):map(function(choice)
