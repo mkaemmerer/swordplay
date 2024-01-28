@@ -2136,23 +2136,37 @@ end
 function set_tide(tide)
 	return function(state)
 		return {
+			tide = tide,
 			insults = state.insults,
 			retorts = state.retorts,
-			tide = tide,
+			used_insults = state.used_insults,
 		}
 	end
 end
 
+function reset_used(state)
+	return {
+		tide = state.tide,
+		insults = state.insults,
+		retorts = state.retorts,
+		used_insults = {},
+	}
+end
+
 function start_battle(state)
-	return set_tide(0.5)(state)
+	return chain({
+		set_tide(0.5),
+		reset_used,
+	})(state)
 end
 
 function learn_insult(insult)
 	return function(state)
 		return {
+			tide = state.tide,
 			insults = set_add(state.insults, insult),
 			retorts = state.retorts,
-			tide = state.tide,
+			used_insults = state.used_insults,
 		}
 	end
 end
@@ -2160,9 +2174,21 @@ end
 function learn_retort(retort)
 	return function(state)
 		return {
+			tide = state.tide,
 			insults = state.insults,
 			retorts = set_add(state.retorts,retort),
+			used_insults = state.used_insults,
+		}
+	end
+end
+
+function use_insult(insult)
+	return function(state)
+		return {
 			tide = state.tide,
+			insults = state.insults,
+			retorts = state.retorts,
+			used_insults = set_add(state.used_insults, insult),
 		}
 	end
 end
@@ -2238,19 +2264,21 @@ enemy_2 = {
 -->8
 -- battle scene
 
+function available_insults(is,state)
+	return list.from_tbl(is)
+		:filter(function(i)
+			return not
+				set_has(state.used_insults,i)
+		end)
+end
+
 -- player adapter
 player_adapter = {
-	get_insult = function(state)
-		local available_insults =
-			list.from_tbl(state.insults)
-				:filter(function(r)
-					return true
-				end)
-	
+	get_insult = function(state)	
 		return menu_flow(
 			retort_menu(
 				"",
-				available_insults,
+				available_insults(state.insults, state),
 				state
 			)
 		):map(function(choice)
@@ -2261,9 +2289,6 @@ player_adapter = {
 	get_retort = function(state,insult)
 		local available_retorts =
 			list.from_tbl(state.retorts)
-				:filter(function(r)
-					return true
-				end)
 		
 		return menu_flow(
 			retort_menu(
@@ -2282,9 +2307,11 @@ player_adapter = {
 -- enemy adapter
 function enemy_adapter(enemy)
 	return {
-		get_insult=function(state)
+		get_insult=function(state)			
 			return flow.create(function(nxt,done)
-				local insult = rnd(enemy.insults)
+				local insult = rnd(
+					available_insults(enemy.insults,state)
+				)
 				done(insult)
 			end)
 		end,
@@ -2301,14 +2328,16 @@ end
 function battle_turn(state,attacker,defender,resolve)
 	return attacker.get_insult(state)
 		:flatmap(function(insult)
-			return remark_flow(insult,state)
+			local newstate = use_insult(insult)(state)
+		
+			return remark_flow(insult,newstate)
 				:flatmap(function()
-					return defender.get_retort(state,insult)
+					return defender.get_retort(newstate,insult)
 				end)
 				:flatmap(function(retort)
-					return remark_flow(retort,state)
+					return remark_flow(retort,newstate)
 						:map(function()
-							return resolve(state,insult,retort)
+							return resolve(newstate,insult,retort)
 						end)
 				end)
 		end)
@@ -2333,12 +2362,26 @@ function enemy_turn(state,enemy)
 end
 
 function battle(state,enemy,turn)
-	if state.tide == 1 then
+	local player_insults = available_insults(
+		state.insults,
+		state
+	)
+	local enemy_insults = available_insults(
+		enemy.insults,
+		state
+	)
+	-- end battle if someone ran
+	-- out of insults
+	if state.tide == 1
+	or (turn == "enemy" and #enemy_insults == 0)
+	then
 		return flow.of({"victory", state})
 	end
-	if state.tide == 0 then
+	if state.tide == 0
+	or (turn == "player" and #player_insults == 0)
+	then
 		return flow.of({"defeat", state})
-	end
+	end	
 	
 	local do_turn = turn == "player"
 		and player_turn(state,enemy)
