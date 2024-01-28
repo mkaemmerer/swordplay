@@ -12,6 +12,7 @@ __lua__
 --  sfx: beep speak
 --  music: battle music
 --  anim: battle animations
+--  anim: scene transitions
 --  story: make some jokes
 
 -- global constants
@@ -24,10 +25,10 @@ function _init()
 
 	-- flow
 	local game_flow = flow.seq({
---		presented_by_scn,
+		presented_by_scn,
 		flow.loop(
 			flow.seq({
---				title_scn,
+				title_scn,
 				swordplay_scn,
 			})
 		),
@@ -1155,6 +1156,10 @@ function list_copy(tbl)
 	return ret
 end
 
+function list_tail(list)
+ return { select(2, unpack(list)) }
+end
+
 ix_array_meta = {
 	__index= {
 		-- comonad
@@ -1378,16 +1383,6 @@ function progress_bar(fac)
 		)
 	}):size("fill",6)
 end
-
-victory_screen = ui_group({
-	ui_text("victory", 7)
-		:align("center","center")
-}):size("fill","fill")
-
-defeat_screen = ui_group({
-	ui_text("defeat", 7)
-		:align("center","center")
-}):size("fill","fill")
 
 function swordplay_ui(top,mnu,opts)
 	local opts = opts or { col="light", fac=0.5 }
@@ -1633,6 +1628,63 @@ function remark_flow(text,state)
 		end)
 end
 
+function victory_flow()
+	local victory_screen = ui_group({
+		ui_text("victory", 7)
+			:align("center","center")
+	}):size("fill","fill")
+	
+	local menu = menu_list(
+		list.from_tbl({
+			"continue"
+		})
+		:map(function(opt)
+			return menu_option(opt, const(opt))
+		end)
+	)
+	
+	local ui = menu
+	:map(function(mnu)
+		local top = victory_screen
+		return swordplay_ui(
+			top,
+			mnu,
+			{col="light",fac=1}
+		)
+	end)
+	
+	return menu_flow(ui)
+end
+
+function defeat_flow()
+	local defeat_screen = ui_group({
+		ui_text("defeat", 7)
+			:align("center","center")
+	}):size("fill","fill")
+	
+	local menu = menu_list(
+		list.from_tbl({
+			"try again",
+			"give up",
+		})
+		:map(function(opt)
+			return menu_option(opt, const(opt))
+		end)
+	)
+	
+	local ui = menu
+	:map(function(mnu)
+		local top = defeat_screen
+		return swordplay_ui(
+			top,
+			mnu,
+			{col="light",fac=0}
+		)
+	end)
+	
+	return menu_flow(ui)
+end
+
 -- swordplay ui
 
 function retort_menu(remark, retorts, state)
@@ -1786,6 +1838,10 @@ function set_tide(state,tide)
 	}
 end
 
+function start_battle(state)
+	return set_tide(state,0.5)
+end
+
 function add_insult(state,insult)
 	return {
 		insults = set_add(state.insults, insult),
@@ -1871,7 +1927,7 @@ enemy_2 = {
 	}
 }
 -->8
--- swordplay scene
+-- battle scene
 
 -- player adapter
 player_adapter = {
@@ -1955,7 +2011,6 @@ function enemy_turn(state,enemy)
 	)
 end
 
-
 function battle(state,enemy,turn)
 	if state.tide == 1 then
 		return flow.of({"victory", state})
@@ -1976,28 +2031,70 @@ function battle(state,enemy,turn)
 	end)
 end
 
-swordplay_scn = flow_scn(
-	battle(
-		start_battle_state,
-		enemy_1,
-		"enemy"
-	)
-	:flatmap(function(r)
-		local res,state = unpack(r)
+-->8
+-- swordplay scene
+
+all_enemies = {
+	enemy_1,
+	enemy_2
+}
+
+function swordplay(enemies, state)
+	if #enemies == 0 then
+		-- todo final victory screen
+		-- or boss fight...
+		return victory_flow()
+	end
 	
+	local function handle_battle(r)
+		local res,next_state = unpack(r)
 		if res == "victory" then
-			return flow.once(function()
-				return victory_screen
-			end)
+			return victory_flow()
+				:map(function()
+					return {"next", next_state}
+				end)
 		end
 		if res == "defeat" then
-			return flow.once(function()
-				return defeat_screen
-			end)
+			return defeat_flow()
+				:map(function(r)
+					if r == "try again" then			
+						return {"retry", next_state}
+					else
+						return {"restart", next_state}
+					end
+				end)
 		end
-	end)
-	:wrap(ui_scn)
+	end
+	
+	local function handle_next(r)
+		local res,next_state = unpack(r)
+		
+		if res == "continue" then
+			local next_enemies = list_tail(enemies)
+			return swordplay(next_enemies, next_state)
+		end
+		if res == "restart" then
+			return flow.of(nil)
+		end
+		if res == "retry" then
+			-- todo reorder enemies?
+			return swordplay(all_enemies, next_state)
+		end
+	end
+	
+	return flow_scn(
+			battle(start_battle(state), enemies[1], "enemy")
+				:flatmap(handle_battle)
+				:wrap(ui_scn)
+		)
+		:flatmap(handle_next)	
+end
+
+swordplay_scn = swordplay(
+	all_enemies,
+	start_battle_state
 )
+
 __gfx__
 00000000000000007077770750555505077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000777777770077700000000000000000000000000000000000000000000000000000000000000000000000000000000000
