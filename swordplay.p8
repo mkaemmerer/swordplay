@@ -9,6 +9,7 @@ __lua__
 --  flow: retorts & counters
 --  ai: pirates to fight
 --  sfx: beep speak
+--  sfx: sword clash
 --  music: battle music
 --  anim: battle animations
 --  story: make some jokes
@@ -1341,6 +1342,9 @@ wipe_left = chain({
 	dots.ease(function(t)
 		return (t*3.5)-1.25
 	end),
+	dots.map(function(r)
+		return 0.6 * r
+	end)
 })(dots.time)
 
 
