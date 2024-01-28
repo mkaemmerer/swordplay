@@ -6,9 +6,7 @@ __lua__
 
 -- todos:
 --  battle system:
---   - don't allow repeats
---   - lose after running out?
---   - lose after one fail?
+--   - lose after 2 misses?
 --  story:
 --   - boss fight with innuendo
 --  ui: scroll for more opts?
@@ -20,6 +18,7 @@ __lua__
 
 -- global constants
 debug = false
+g_text_speed = 40
 
 function _init()
 	-- global state
@@ -1652,14 +1651,13 @@ end
 function text_flow(text)
 	return flow.once(function(nxt)
 		local t = 0
-		local spd = 20
 		local function len()
-			return t*spd
+			return t*g_text_speed
 		end
 		return text_reveal(text,7,len)
 			:updatable(function(scn,dt)			
 				t += dt
-				if t > #text/spd + 0.5 then
+				if t > #text/g_text_speed + 0.5 then
 					nxt()
 				end
 			end)
@@ -1888,7 +1886,7 @@ function remark_flow(text,state)
 				return swordplay_ui(
 					c,
 					ui_empty,
-					{col="dark",fac=state.tide}
+					{col="dark",fac=state.tide/state.max_tide}
 				)
 		end)
 end
@@ -1996,7 +1994,7 @@ function retort_menu(remark, retorts, state)
 		return swordplay_ui(
 			top,
 			mnu,
-			{col="light",fac=state.tide}
+			{col="light",fac=state.tide/state.max_tide}
 		)
 	end)
 end
@@ -2115,7 +2113,7 @@ start_battle_state = {
 	retorts={
 		"uh..."
 	},
-	tide=0.5,
+	tide=0,
 }
 
 function set_has(set,x)
@@ -2133,10 +2131,27 @@ function set_add(set,x)
 	return ret
 end
 
+function is_victory(state)
+	return state.tide >= state.max_tide
+end
+
 function set_tide(tide)
 	return function(state)
 		return {
 			tide = tide,
+			max_tide = state.max_tide,
+			insults = state.insults,
+			retorts = state.retorts,
+			used_insults = state.used_insults,
+		}
+	end
+end
+
+function set_max_tide(max_tide)
+	return function(state)
+		return {
+			tide = state.tide,
+			max_tide = max_tide,
 			insults = state.insults,
 			retorts = state.retorts,
 			used_insults = state.used_insults,
@@ -2147,15 +2162,17 @@ end
 function reset_used(state)
 	return {
 		tide = state.tide,
+		max_tide = state.max_tide,
 		insults = state.insults,
 		retorts = state.retorts,
 		used_insults = {},
 	}
 end
 
-function start_battle(state)
+function start_battle(state,enemy)
 	return chain({
-		set_tide(0.5),
+		set_tide(0),
+		set_max_tide(#enemy.insults),
 		reset_used,
 	})(state)
 end
@@ -2164,6 +2181,7 @@ function learn_insult(insult)
 	return function(state)
 		return {
 			tide = state.tide,
+			max_tide = state.max_tide,
 			insults = set_add(state.insults, insult),
 			retorts = state.retorts,
 			used_insults = state.used_insults,
@@ -2175,6 +2193,7 @@ function learn_retort(retort)
 	return function(state)
 		return {
 			tide = state.tide,
+			max_tide = state.max_tide,
 			insults = state.insults,
 			retorts = set_add(state.retorts,retort),
 			used_insults = state.used_insults,
@@ -2186,6 +2205,7 @@ function use_insult(insult)
 	return function(state)
 		return {
 			tide = state.tide,
+			max_tide = state.max_tide,
 			insults = state.insults,
 			retorts = state.retorts,
 			used_insults = set_add(state.used_insults, insult),
@@ -2195,34 +2215,32 @@ end
 
 function resolve_attack(state,insult,retort)
 	local success = not (retort == comeback_retorts[insult])
-	-- learn new retort,
-	-- update the battle
 	local new_state = chain({
-		learn_retort(retort),
-		set_tide(
-			success
-				and state.tide + 0.25
-				or  state.tide - 0.25
-		),
+		-- learn a retort
+		success
+			and id
+			or  learn_retort(retort),
 	})(state)
-
-	return new_state
+	
+	return {true, new_state}
 end
 
 function resolve_defend(state,insult,retort)
 	local success = retort == comeback_retorts[insult]
 	-- learn new insult,
 	-- update the battle
+	-- win points after successful
+	-- defenses
 	local new_state = chain({
 		learn_insult(insult),
 		set_tide(
 			success
-				and state.tide + 0.25
-				or  state.tide - 0.25
+				and state.tide + 1
+				or  state.tide
 		),
 	})(state)
 	
-	return new_state
+	return { success, new_state }
 end
 
 -- fighters
@@ -2372,13 +2390,12 @@ function battle(state,enemy,turn)
 	)
 	-- end battle if someone ran
 	-- out of insults
-	if state.tide == 1
+	if is_victory(state)
 	or (turn == "enemy" and #enemy_insults == 0)
 	then
 		return flow.of({"victory", state})
 	end
-	if state.tide == 0
-	or (turn == "player" and #player_insults == 0)
+	if (turn == "player" and #player_insults == 0)
 	then
 		return flow.of({"defeat", state})
 	end	
@@ -2387,10 +2404,16 @@ function battle(state,enemy,turn)
 		and player_turn(state,enemy)
 		or  enemy_turn(state,enemy)
 		
-	return do_turn:flatmap(function(newstate)
+	return do_turn:flatmap(function(res)
+		local result,newstate = unpack(res)
 		local opponent = turn == "player"
 			and "enemy"
 			or  "player"
+		
+		if not result then
+			return flow.of({"defeat", newstate})
+		end
+		
 		return battle(newstate,enemy,opponent)
 	end)
 end
@@ -2455,13 +2478,15 @@ function swordplay(battle_num, enemies, state)
 		end
 	end
 	
+	local enemy = enemies[battle_num]
+	
 	return flow.seq({
 		battle_intro_flow(battle_num),
 		flow_scn(
 			battle(
-				start_battle(state),
-				enemies[battle_num],
-				"enemy"
+				start_battle(state,enemy),
+				enemy,
+				"player"
 			)
 				:flatmap(handle_battle)
 				:wrap(ui_scn)
