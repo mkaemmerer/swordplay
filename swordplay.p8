@@ -4,15 +4,18 @@ __lua__
 --swordplay
 --by mabbees
 
--- todos
+-- todos:
+--  battle system:
+--   - don't allow repeats
+--   - lose after one fail?
+--  story:
+--   - boss fight with innuendo
 --  ui: scroll for more opts?
---  flow: retorts & counters
---  ai: pirates to fight
+--  ui: clip to box
 --  sfx: beep speak
 --  sfx: sword clash
 --  music: battle music
 --  anim: battle animations
---  story: make some jokes
 
 -- global constants
 debug = false
@@ -1364,6 +1367,15 @@ function list_tail(list)
  return { select(2, unpack(list)) }
 end
 
+-- shuffle a list in place
+function shuffle(xs)
+	for i = #xs, 2, -1 do
+		local j = flr(rnd(i)) + 1
+		xs[i], xs[j] = xs[j], xs[i]
+	end
+	return xs
+end
+
 ix_array_meta = {
 	__index= {
 		-- comonad
@@ -1605,6 +1617,7 @@ function swordplay_ui(top,mnu,opts)
 			:size("fill", 128 - menu_height - bar_height),
 			-- menu part
 			menu_panel(mnu, opts.col or "light")
+				:inset(1)
 				:size("fill", menu_height),
 		}, "stack")
 		:size("fill","fill")
@@ -1743,17 +1756,28 @@ title_scn = flow.once(function(nxt)
 	local ui = ui_group({		
 		ui_text("SwordPLAY",7)
 			:align("center","center")
-			:effect(draw_with_outline_9(5)),
+			:effect(
+				chain({
+					draw_with_shadow(5),
+					draw_with_outline_9(5),
+				})
+			),
 		
-		ui_text("press ❎ to start", 5)
+		ui_text("press ❎ to start",7)
 			:inset(4)
 			:align("center","bottom")
 			:translate(0,-12)
 			:effect(function(draw)
 				local blink = (t*3) % 1 > 0.5
 				local eff = (is_ready and blink)
-					and draw_with_outline_9(7)
-					or  draw_with_outline_9(6)
+					and chain({
+						draw_with_color(5),
+						draw_with_outline_9(7),
+					})
+					or chain({
+						draw_with_color(7),
+						draw_with_outline_9(5),
+					})
 				return eff(draw)
 			end),
 	})
@@ -1859,6 +1883,12 @@ function battle_intro_flow(number)
 		local ui = ui_group({
 				ui_text("battle "..number, 7)
 					:align("center","center")
+					:effect(
+						chain({
+							draw_with_shadow(5),
+							draw_with_outline_9(5),
+						})
+					)
 			}):size("fill","fill")
 		
 		return {
@@ -2017,33 +2047,41 @@ end
 -->8
 -- swordfighting state
 
-comeback_retorts = {
-	["you dare challenge me?"]
-	= "you're hardly a challenge",
-
-	["i've seen mannequins less stiff than your form"]
-	= "not as stiff as you'll be when i'm done",
-
-	["get on your knees and beg for your life"]
-	= "i could do it standing if you weren't so tiny",
-
-	["do try to keep up"]
-	= "i could do this all night long",
-
-	["you fight like a dairy farmer"]
-	= "how appropriate, you fight like a cow",
+dialogue = {
+	{
+		insult="you dare challenge me?",
+		retort="you're hardly a challenge",
+	},
+	{
+		insult="i've seen mannequins less stiff than your form",
+		retort="not as stiff as you'll be when i'm done",
+	},
+	{
+		insult="get on your knees and beg for your life!",
+		retort="i could do it standing if you weren't so tiny",
+	},
+	{
+		insult="you've never seen moves like mine. do try to keep up.",
+		retort="i could do this all night long",
+	},
+	{
+		insult="come on, is that all you've got?",
+		retort="just giving you time to prepare yourself",
+	},
 	
-	["i once owned a dog that was smarter than you"]
-	= "he must have taught you everything you know",
-	
-	["you smell!"]
-	= "...is that the best you got?"
+	--
+	{
+		insult="you smell!",
+		retort="...is that the best you got?",
+	},
 }
 
--- invert the table
+-- index table in both directions
+comeback_retorts = {}
 retort_insults = {}
-for k,v in pairs(comeback_retorts) do
-	retort_insults[v] = k
+for tbl in all(dialogue) do
+	comeback_retorts[tbl.insult] = tbl.retort
+	retort_insults[tbl.retort] = tbl.insult
 end
 
 
@@ -2153,27 +2191,27 @@ function enemy_get_retort(enemy,insult)
 	return retort		
 end
 
--- a tough enemy
+-- enemy declarations
 enemy_1 = {
 	insults = {
-		"you fight like a dairy farmer",
-		"i once owned a dog that was smarter than you"		
+		dialogue[1].insult,
+		dialogue[2].insult,
 	},
 	retorts = {
-		"how appropriate, you fight like a cow",
-		"he must have taught you everything you know",
-		"...is that the best you got?"
+		dialogue[1].retort,
+		dialogue[3].retort,
+		dialogue[6].retort
 	}
 }
-
--- an easier enemy
 enemy_2 = {
 	insults = {
-		"i once owned a dog that was smarter than you"		
+		dialogue[3].insult,
+		dialogue[4].insult,
 	},
 	retorts = {
-		"he must have taught you everything you know",
-		"...is that the best you got?"
+		dialogue[2].retort,
+		dialogue[4].retort,
+		dialogue[6].retort
 	}
 }
 -->8
@@ -2284,10 +2322,12 @@ end
 -->8
 -- swordplay scene
 
-all_enemies = {
-	enemy_1,
-	enemy_2
-}
+function battle_enemies()
+	return shuffle({
+		enemy_1,
+		enemy_2
+	})
+end
 
 function swordplay(battle_num, enemies, state)
 	if battle_num > #enemies then
@@ -2331,10 +2371,9 @@ function swordplay(battle_num, enemies, state)
 			return flow.of(nil)
 		end
 		if res == "retry" then
-			-- todo reorder enemies?
 			return swordplay(
 				1,
-				all_enemies,
+				battle_enemies(),
 				next_state
 			)
 		end
@@ -2345,7 +2384,7 @@ function swordplay(battle_num, enemies, state)
 		flow_scn(
 			battle(
 				start_battle(state),
-				enemies[1],
+				enemies[battle_num],
 				"enemy"
 			)
 				:flatmap(handle_battle)
@@ -2357,7 +2396,7 @@ end
 
 swordplay_scn = swordplay(
 	1,
-	all_enemies,
+	battle_enemies(),
 	start_battle_state
 )
 
