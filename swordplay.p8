@@ -1379,6 +1379,16 @@ function progress_bar(fac)
 	}):size("fill",6)
 end
 
+victory_screen = ui_group({
+	ui_text("victory", 7)
+		:align("center","center")
+}):size("fill","fill")
+
+defeat_screen = ui_group({
+	ui_text("defeat", 7)
+		:align("center","center")
+}):size("fill","fill")
+
 function swordplay_ui(top,mnu,opts)
 	local opts = opts or { col="light", fac=0.5 }
 	local bar_height = 22
@@ -1706,12 +1716,26 @@ end
 -- swordfighting state
 
 comeback_retorts = {
+	["you dare challenge me?"]
+	= "you're hardly a challenge",
+
+	["i've seen mannequins less stiff than your form"]
+	= "not as stiff as you'll be when i'm done",
+
+	["get on your knees and beg for your life"]
+	= "i could do it standing if you weren't so tiny",
+
+	["do try to keep up"]
+	= "i could do this all night long",
+
 	["you fight like a dairy farmer"]
-		= "how appropriate, you fight like a cow",
+	= "how appropriate, you fight like a cow",
+	
 	["i once owned a dog that was smarter than you"]
-		= "he must have taught you everything you know",
+	= "he must have taught you everything you know",
+	
 	["you smell!"]
-		= "...is that the best you got?"
+	= "...is that the best you got?"
 }
 
 -- invert the table
@@ -1934,10 +1958,10 @@ end
 
 function battle(state,enemy,turn)
 	if state.tide == 1 then
-		return flow.of("victory")
+		return flow.of({"victory", state})
 	end
 	if state.tide == 0 then
-		return flow.of("defeat")
+		return flow.of({"defeat", state})
 	end
 	
 	local do_turn = turn == "player"
@@ -1958,26 +1982,21 @@ swordplay_scn = flow_scn(
 		enemy_1,
 		"enemy"
 	)
-		:wrap(ui_scn)
-		:map(function(res)
-			if res == "victory" then
-				return ui_group({
-					ui_text("victory", 7)
-						:align("center","center")
-				}):size("fill","fill")
-			end
-			if res == "defeat" then
-				return ui_group({
-						ui_text("defeat", 7)
-							:align("center","center")
-					}):size("fill","fill")
-			end
-		end)
-		:flatmap(function(c)
-			return flow.once(
-				const(ui_scn(c))
-			)
-		end)
+	:flatmap(function(r)
+		local res,state = unpack(r)
+	
+		if res == "victory" then
+			return flow.once(function()
+				return victory_screen
+			end)
+		end
+		if res == "defeat" then
+			return flow.once(function()
+				return defeat_screen
+			end)
+		end
+	end)
+	:wrap(ui_scn)
 )
 __gfx__
 00000000000000007077770750555505077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000
