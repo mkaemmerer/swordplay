@@ -2306,6 +2306,14 @@ enemy_2 = {
 		dialogue[6].retort
 	}
 }
+final_enemy = {
+	insults = {
+		dialogue[1].insult,
+		dialogue[2].insult,
+		dialogue[3].insult,
+		dialogue[4].insult,
+	}
+}
 -->8
 -- battle scene
 
@@ -2398,10 +2406,6 @@ function enemy_turn(state,enemy)
 end
 
 function battle(state,enemy,turn)
-	local player_insults = unused_insults(
-		state.insults,
-		state
-	)
 	local enemy_insults = unused_insults(
 		enemy.insults,
 		state
@@ -2430,6 +2434,30 @@ function battle(state,enemy,turn)
 		
 		return battle(newstate,enemy,opponent)
 	end)
+end
+
+-- instead of trading insults
+-- only enemy delivers insults
+-- and player must defend
+function one_sided_battle(state,enemy)
+	local enemy_insults = unused_insults(
+		enemy.insults,
+		state
+	)
+	-- end battle if enemy ran
+	-- out of insults
+	if is_victory(state) or #enemy_insults == 0 then
+		return flow.of(state)
+	end
+
+	return enemy_turn(state,enemy)
+		:flatmap(function(res)
+			local result,newstate = unpack(res)			
+			if not result then
+				return flow.err(newstate)
+			end
+			return one_sided_battle(newstate,enemy)
+		end)
 end
 
 -->8
@@ -2479,8 +2507,10 @@ end
 function final_battle(state)
 	local btl = flow.seq({
 		battle_intro_flow("final battle"),
-		-- todo: battle goes here
-		flow.of(state),
+		one_sided_battle(
+			start_battle(state,final_enemy),
+			final_enemy
+		),
 		battle_intro_flow("complete!"),
 	})
 	:handle_err(handle_defeat)
