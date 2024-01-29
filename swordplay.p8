@@ -2004,6 +2004,7 @@ function menu_option(txt,cb)
 	)
 end
 
+
 function menu_list(opts)
 	local function make_stack(x,i)
 		local cs_focus = list_map(opts, function(c,j)
@@ -2016,7 +2017,7 @@ function menu_list(opts)
 		end)
 		return ui_layout(cs_blur, "stack", 4)
 			:focusable(
-				ui_layout(cs_focus, "stack", 4),
+				menu_scroll(cs_focus, i, 4),
 				x.select
 			)
 	end
@@ -2031,6 +2032,33 @@ function menu_list(opts)
 	return fuse_cursor(curs)
 end
 
+
+function menu_scroll(opts, idx, m)
+	local layout = rdr(function(dims)
+		local w,h = unpack(dims)
+		local arr = {}
+		local scroll = 0
+		local dx,dy = 0,0
+		for i,c in pairs(opts) do
+			add(arr, c:translate(dx,dy))
+			local cw,ch = unpack(c.dims.run(dims))
+			-- compute scroll value
+			if i == idx then
+				if dy+ch > h then
+					-- selected opt is too far
+					-- down on the list
+					scroll = h - (dy+ch+m)
+				end
+			end
+			-- increment offset
+			dx,dy = dx, dy+m+ch
+		end
+		return ui_group(arr)
+			:translate(0,scroll)
+	end)
+	
+	return ui.from_rdr(layout)
+end
 -->8
 -- swordfighting state
 
@@ -2065,11 +2093,6 @@ dialogue = {
 
 bad_insults = list.from_tbl({
 	"you smell!",
-	"test 1",
-	"test 2",
-	"test 3",
-	"test 4",
-	"test 5",
 })
 bad_retorts = list.from_tbl({
 	"uh..."
