@@ -12,6 +12,7 @@ __lua__
 --  sfx: beep speak
 --  sfx: sword clash
 --  music: battle music
+--  anim: character sprites
 --  anim: battle animations
 
 -- global constants
@@ -1882,7 +1883,7 @@ function remark_flow(text,state)
 		end)
 end
 
-function battle_intro_flow(number)
+function battle_intro_flow(text)
 	return flow.once(function(nxt)
 		local b = behavior.seq({
 			behavior_wait(2),
@@ -1890,7 +1891,7 @@ function battle_intro_flow(number)
 			behavior.never
 		})
 		return  ui_group({
-			ui_text("battle "..number, 7)
+			ui_text(text, 7)
 				:align("center","center")
 				:effect(
 					chain({
@@ -2406,10 +2407,7 @@ end
 
 function swordplay(battle_num, enemies, state)
 	if battle_num > #enemies then
-		-- todo final victory screen
-		-- or boss fight...
-		return victory_flow()
-			:wrap(ui_scn)
+		return final_battle(state)
 	end
 	
 	local function handle_battle(r)
@@ -2458,7 +2456,7 @@ function swordplay(battle_num, enemies, state)
 	
 	return flow_scn(
 		flow.seq({
-			battle_intro_flow(battle_num),
+			battle_intro_flow("battle "..battle_num),
 			battle(
 				start_battle(state,enemy),
 				enemy,
@@ -2468,7 +2466,15 @@ function swordplay(battle_num, enemies, state)
 		:flatmap(handle_battle)
 		:wrap(ui_scn)
 	)
-	:flatmap(handle_next)	
+	:flatmap(handle_next)
+end
+
+function final_battle(state)	
+	return flow_scn(
+		flow.seq({
+			battle_intro_flow("final battle"),
+		}):wrap(ui_scn)
+	)
 end
 
 swordplay_scn = swordplay(
