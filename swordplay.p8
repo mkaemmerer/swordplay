@@ -399,24 +399,32 @@ flow_meta={
 	__index={
 		map=function(m,f)
 			return flow.create(
-				function(nxt, done)
-					m.go(nxt, compose(f,done))
+				function(nxt, done, err)
+					m.go(nxt, compose(f,done), err)
 				end)
 		end,
 		flatmap=function(m,f)
 			return flow.create(
-				function(nxt, done)
+				function(nxt, done, err)
 		   m:map(f).go(nxt, function(n)
-		    n.go(nxt, done)
-		   end)
+		    n.go(nxt, done, err)
+		   end, err)
 		  end)
+		end,
+		handle_err=function(m,f)
+			return flow.create(
+				function(nxt, done, err)
+					m.go(nxt, done, function(e)
+						f(e).go(nxt,done,err)
+					end)
+				end)
 		end,
 		wrap=function(m,f)
 			return flow.create(
-				function(nxt,done)
+				function(nxt,done,err)
 					m.go(function(x)
 						nxt(f(x))
-					end, done)
+					end, done, err)
 				end
 			)
 		end
@@ -432,6 +440,12 @@ end
 function flow.of(value)
  return flow.create(function(nxt, done)
   done(value)
+ end)
+end
+
+function flow.err(e)
+ return flow.create(function(nxt, done, err)
+  err(e)
  end)
 end
 
@@ -452,6 +466,11 @@ flow.seq = monad_seq(flow.of(nil))
 
 flow.loop = monad_loop
 
+function flow.retry(f)
+	return f:handle_err(function(e)
+		return flow.retry(f)
+	end)
+end
 
 -- behavior -------------------
 -- behavior (pico)
