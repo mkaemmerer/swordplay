@@ -10,7 +10,6 @@ __lua__
 --  story:
 --   - boss fight with innuendo
 --  ui: scroll for more opts?
---  ui: clip to box
 --  sfx: beep speak
 --  sfx: sword clash
 --  music: battle music
@@ -888,6 +887,13 @@ function ui_spr(n,sw,sh)
 	:size(w,h)
 end
 
+function ui_clip(c)
+	return ui.from_draw(function(x,y,w,h)
+		clip(x,y,w,h)
+		draw_ui(c, {x,y,w,h})
+		clip()
+	end)
+end
 
 -- layouts
 function ui_offset(c,dx,dy)
@@ -1565,7 +1571,8 @@ function menu_panel(c, col)
 		col == "dark"
 			and menu_box_dark
 			or  menu_box,
-		c:inset(4)
+		ui_clip(c:inset(3))
+			:inset(1),
 	})
 end
 
@@ -2057,7 +2064,12 @@ dialogue = {
 }
 
 bad_insults = list.from_tbl({
-	"you smell!"
+	"you smell!",
+	"test 1",
+	"test 2",
+	"test 3",
+	"test 4",
+	"test 5",
 })
 bad_retorts = list.from_tbl({
 	"uh..."
