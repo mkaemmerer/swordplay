@@ -229,6 +229,17 @@ function list_filter(l,f)
 	return list.create(ret)
 end
 
+function list_concat(l1,l2)
+	local ret = {}
+	foreach(l1, function(x)
+		add(ret, x)
+	end)
+	foreach(l2, function(x)
+		add(ret, x)
+	end)
+	return list.create(ret)
+end
+
 function list_reduce(l,f,seed)
 	return reduce(f,seed)(l)
 end
@@ -257,6 +268,7 @@ list_meta = {
 		flatmap = list_flatmap,
 		filter  = list_filter,
 		reduce  = list_reduce,
+		concat  = list_concat,
 		all     = list_all,
 		any     = list_any,
 	}
@@ -429,6 +441,12 @@ function flow.once(make_scene)
 	 function(nxt, done)
 	  nxt(make_scene(once(done)))
 	 end)
+end
+
+function flow.defer(f)
+	return flow.create(function(nxt, done)
+		done(f())
+	end)
 end
 
 flow.seq = monad_seq(flow.of(nil))
@@ -1865,7 +1883,7 @@ function battle_intro_flow(number)
 			behavior.once(nxt),
 			behavior.never
 		})
-		local ui = ui_group({
+		return  ui_group({
 			ui_text("battle "..number, 7)
 				:align("center","center")
 				:effect(
@@ -1878,7 +1896,6 @@ function battle_intro_flow(number)
 			:updatable(function(scn,dt)
 				b = b.update(scn,dt)
 			end)
-		return ui_scn(ui)
 	end)
 end
 
@@ -2039,6 +2056,13 @@ dialogue = {
 	},
 }
 
+bad_insults = list.from_tbl({
+	"you smell!"
+})
+bad_retorts = list.from_tbl({
+	"uh..."
+})
+
 -- index table in both directions
 comeback_retorts = {}
 retort_insults = {}
@@ -2057,12 +2081,8 @@ end
 --      1.0: player wins
 
 start_battle_state = {
-	insults={
-		"you smell!"
-	},
-	retorts={
-		"uh..."
-	},
+	insults={},
+	retorts={},
 	tide=0,
 	max_tide=2,
 	used_insults={},
@@ -2216,7 +2236,7 @@ enemy_2 = {
 -->8
 -- battle scene
 
-function available_insults(is,state)
+function unused_insults(is,state)
 	return list.from_tbl(is)
 		:filter(function(i)
 			return not
@@ -2226,11 +2246,14 @@ end
 
 -- player adapter
 player_adapter = {
-	get_insult = function(state)	
+	get_insult = function(state)
+		local available_insults =
+			unused_insults(state.insults, state)
+				:concat(bad_insults)
 		return menu_flow(
 			retort_menu(
 				"",
-				available_insults(state.insults, state),
+				available_insults,
 				state
 			)
 		)
@@ -2238,7 +2261,7 @@ player_adapter = {
 	get_retort = function(state,insult)
 		local available_retorts =
 			list.from_tbl(state.retorts)
-		
+				:concat(bad_retorts)
 		return menu_flow(
 			retort_menu(
 				insult,
@@ -2254,17 +2277,15 @@ player_adapter = {
 function enemy_adapter(enemy)
 	return {
 		get_insult=function(state)			
-			return flow.create(function(nxt,done)
-				local insult = rnd(
-					available_insults(enemy.insults,state)
+			return flow.defer(function()
+				return rnd(
+					unused_insults(enemy.insults,state)
 				)
-				done(insult)
 			end)
 		end,
 		get_retort=function(state,insult)
-			return flow.create(function(nxt,done)
-				local retort = enemy_get_retort(enemy, insult)
-				done(retort)
+			return flow.defer(function()
+				return enemy_get_retort(enemy, insult)
 			end)
 		end,
 	}
@@ -2308,30 +2329,26 @@ function enemy_turn(state,enemy)
 end
 
 function battle(state,enemy,turn)
-	local player_insults = available_insults(
+	local player_insults = unused_insults(
 		state.insults,
 		state
 	)
-	local enemy_insults = available_insults(
+	local enemy_insults = unused_insults(
 		enemy.insults,
 		state
 	)
-	-- end battle if someone ran
+	-- end battle if enemy ran
 	-- out of insults
 	if is_victory(state)
 	or (turn == "enemy" and #enemy_insults == 0)
 	then
 		return flow.of({"victory", state})
 	end
-	if (turn == "player" and #player_insults == 0)
-	then
-		return flow.of({"defeat", state})
-	end	
-	
+
 	local do_turn = turn == "player"
 		and player_turn(state,enemy)
 		or  enemy_turn(state,enemy)
-		
+	
 	return do_turn:flatmap(function(res)
 		local result,newstate = unpack(res)
 		local opponent = turn == "player"
@@ -2408,18 +2425,18 @@ function swordplay(battle_num, enemies, state)
 	
 	local enemy = enemies[battle_num]
 	
-	return flow.seq({
-		battle_intro_flow(battle_num),
-		flow_scn(
+	return flow_scn(
+		flow.seq({
+			battle_intro_flow(battle_num),
 			battle(
 				start_battle(state,enemy),
 				enemy,
 				"player"
 			)
-				:flatmap(handle_battle)
-				:wrap(ui_scn)
-		)
-	})
+		})
+		:flatmap(handle_battle)
+		:wrap(ui_scn)
+	)
 	:flatmap(handle_next)	
 end
 
