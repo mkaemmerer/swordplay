@@ -9,7 +9,6 @@ __lua__
 --   - lose after 2 misses?
 --  story:
 --   - boss fight with innuendo
---  ui: scroll for more opts?
 --  sfx: beep speak
 --  sfx: sword clash
 --  music: battle music
@@ -1956,8 +1955,8 @@ end
 
 -- swordplay ui
 
-function retort_menu(remark, retorts, state)
-	return menu_list(
+function battle_menu(remark, retorts, state)
+	local menu = menu_list(
 		retorts
 			:map(function(retort)
 				return menu_option(retort, const(retort))
@@ -1971,6 +1970,7 @@ function retort_menu(remark, retorts, state)
 			{col="light",fac=state.tide/state.max_tide}
 		)
 	end)
+	return menu_flow(menu)
 end
 
 
@@ -2095,7 +2095,7 @@ bad_insults = list.from_tbl({
 	"you smell!",
 })
 bad_retorts = list.from_tbl({
-	"uh..."
+	"...oh yeah?",
 })
 
 -- index table in both directions
@@ -2285,24 +2285,20 @@ player_adapter = {
 		local available_insults =
 			unused_insults(state.insults, state)
 				:concat(bad_insults)
-		return menu_flow(
-			retort_menu(
-				"",
-				available_insults,
-				state
-			)
+		return battle_menu(
+			"",
+			available_insults,
+			state
 		)
 	end,
 	get_retort = function(state,insult)
 		local available_retorts =
 			list.from_tbl(state.retorts)
 				:concat(bad_retorts)
-		return menu_flow(
-			retort_menu(
-				insult,
-				available_retorts,
-				state
-			)
+		return battle_menu(
+			insult,
+			available_retorts,
+			state
 		)
 	end,
 }
