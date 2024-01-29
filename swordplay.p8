@@ -63,6 +63,7 @@ end
 -- * algebraic functions
 -- * list
 -- * reader
+-- * lens
 -- * flow
 -- * behavior
 -- * drawing
@@ -324,6 +325,60 @@ rdr_local=function(f,r)
 	end)
 end
 
+
+-- lens -----------------------
+id_lens = {
+	get=function(s) return s end,
+	set=function(s,x) return x end,
+}
+
+function idx_lens(i)
+	return {
+		get=function(s)
+			return s[i]
+		end,
+		set=function(s,x)
+			local c = list_copy(s)
+			c[i] = x
+			return c
+		end,
+	}
+end
+
+function prop_lens(k)
+	return {
+		get=function(s)
+			return s[k]
+		end,
+		set=function(s,x)
+			local c = tbl_copy(s)
+			c[k] = x
+			return c
+		end,
+	}
+end
+
+function compose_lens(l1,l2)
+	return {
+		get=function(s)
+			return l2.get(l1.get(s))
+		end,
+		set=function(s, x)
+			local inner = l1.get(s)
+			return l1.set(s, l2.set(inner, x))
+		end,
+	}
+end
+
+chain_lens = reduce(compose_lens, id_lens)
+
+function tbl_copy(tbl)
+	local ret = {}
+	for k,v in pairs(tbl) do
+		ret[k] = v
+	end
+	return ret
+end
 
 -- flow -----------------------
 
@@ -1570,7 +1625,7 @@ function text_flow(text)
 			:updatable(function(scn,dt)			
 				t += dt
 				if t > #text/g_text_speed + 0.5 then
-					nxt()
+					nxt(text)
 				end
 			end)
 	end)
@@ -1795,30 +1850,30 @@ end
 function remark_flow(text,state)
 	return text_flow(text)
 		:wrap(function(c)
-				return swordplay_ui(
-					c,
-					ui_empty,
-					{col="dark",fac=state.tide/state.max_tide}
-				)
+			return swordplay_ui(
+				c,
+				ui_empty,
+				{col="dark",fac=state.tide/state.max_tide}
+			)
 		end)
 end
 
 function battle_intro_flow(number)
 	return flow.once(function(nxt)
-		local b =behavior.seq({
+		local b = behavior.seq({
 			behavior_wait(2),
 			behavior.once(nxt),
 			behavior.never
 		})
 		local ui = ui_group({
-				ui_text("battle "..number, 7)
-					:align("center","center")
-					:effect(
-						chain({
-							draw_with_shadow(5),
-							draw_with_outline_9(5),
-						})
-					)
+			ui_text("battle "..number, 7)
+				:align("center","center")
+				:effect(
+					chain({
+						draw_with_shadow(5),
+						draw_with_outline_9(5),
+					})
+				)
 			}):size("fill","fill")
 			:updatable(function(scn,dt)
 				b = b.update(scn,dt)
@@ -1834,24 +1889,19 @@ function victory_flow()
 			:align("center","center")
 	}):size("fill","fill")
 	
-	local menu = menu_list(
-		list.from_tbl({
-			"continue"
-		})
-		:map(function(opt)
-			return menu_option(opt, const(opt))
-		end)
-	)
+	local menu = menu_list({
+		menu_option("continue", const("continue")),
+	})
 	
 	local ui = menu
-	:map(function(mnu)
-		local top = victory_screen
-		return swordplay_ui(
-			top,
-			mnu,
-			{col="light",fac=1}
-		)
-	end)
+		:map(function(mnu)
+			local top = victory_screen
+			return swordplay_ui(
+				top,
+				mnu,
+				{col="light",fac=1}
+			)
+		end)
 	
 	return menu_flow(ui)
 end
@@ -1862,15 +1912,10 @@ function defeat_flow()
 			:align("center","center")
 	}):size("fill","fill")
 	
-	local menu = menu_list(
-		list.from_tbl({
-			"try again",
-			"give up",
-		})
-		:map(function(opt)
-			return menu_option(opt, const(opt))
-		end)
-	)
+	local menu = menu_list({
+		menu_option("try again", const("try again")),
+		menu_option("give up", const("give up"))
+	})
 	
 	local ui = menu
 	:map(function(mnu)
@@ -1891,9 +1936,7 @@ function retort_menu(remark, retorts, state)
 	return menu_list(
 		retorts
 			:map(function(retort)
-				return menu_option(retort, function()
-					return {remark,retort}
-				end)
+				return menu_option(retort, const(retort))
 			end)
 	)
 	:map(function(mnu)
@@ -2021,6 +2064,8 @@ start_battle_state = {
 		"uh..."
 	},
 	tide=0,
+	max_tide=2,
+	used_insults={},
 }
 
 function set_has(set,x)
@@ -2043,37 +2088,22 @@ function is_victory(state)
 end
 
 function set_tide(tide)
+	local lens = prop_lens("tide")
 	return function(state)
-		return {
-			tide = tide,
-			max_tide = state.max_tide,
-			insults = state.insults,
-			retorts = state.retorts,
-			used_insults = state.used_insults,
-		}
+		return lens.set(state, tide)
 	end
 end
 
 function set_max_tide(max_tide)
+	local lens = prop_lens("max_tide")
 	return function(state)
-		return {
-			tide = state.tide,
-			max_tide = max_tide,
-			insults = state.insults,
-			retorts = state.retorts,
-			used_insults = state.used_insults,
-		}
+		return lens.set(state, max_tide)
 	end
 end
 
 function reset_used(state)
-	return {
-		tide = state.tide,
-		max_tide = state.max_tide,
-		insults = state.insults,
-		retorts = state.retorts,
-		used_insults = {},
-	}
+	local lens = prop_lens("used_insults")
+	return lens.set(state, {})
 end
 
 function start_battle(state,enemy)
@@ -2085,38 +2115,35 @@ function start_battle(state,enemy)
 end
 
 function learn_insult(insult)
+	local lens = prop_lens("insults")
 	return function(state)
-		return {
-			tide = state.tide,
-			max_tide = state.max_tide,
-			insults = set_add(state.insults, insult),
-			retorts = state.retorts,
-			used_insults = state.used_insults,
-		}
+		local insults = set_add(
+			lens.get(state),
+			insult
+		)
+		return lens.set(state, insults)
 	end
 end
 
 function learn_retort(retort)
+	local lens = prop_lens("retorts")
 	return function(state)
-		return {
-			tide = state.tide,
-			max_tide = state.max_tide,
-			insults = state.insults,
-			retorts = set_add(state.retorts,retort),
-			used_insults = state.used_insults,
-		}
+		local retorts = set_add(
+			lens.get(state),
+			retort
+		)
+		return lens.set(state, retorts)
 	end
 end
 
 function use_insult(insult)
+	local lens = prop_lens("used_insults")
 	return function(state)
-		return {
-			tide = state.tide,
-			max_tide = state.max_tide,
-			insults = state.insults,
-			retorts = state.retorts,
-			used_insults = set_add(state.used_insults, insult),
-		}
+		local used_insults = set_add(
+			lens.get(state),
+			insult
+		)
+		return lens.set(state, used_insults)
 	end
 end
 
@@ -2206,10 +2233,7 @@ player_adapter = {
 				available_insults(state.insults, state),
 				state
 			)
-		):map(function(choice)
-			local _,insult = unpack(choice)
-			return insult
-		end)
+		)
 	end,
 	get_retort = function(state,insult)
 		local available_retorts =
@@ -2221,10 +2245,7 @@ player_adapter = {
 				available_retorts,
 				state
 			)
-		):map(function(choice)
-			local _,retort = unpack(choice)
-			return retort
-		end)
+		)
 	end,
 }
 
@@ -2261,9 +2282,9 @@ function battle_turn(state,attacker,defender,resolve)
 				end)
 				:flatmap(function(retort)
 					return remark_flow(retort,newstate)
-						:map(function()
-							return resolve(newstate,insult,retort)
-						end)
+				end)
+				:map(function(retort)
+					return resolve(newstate,insult,retort)
 				end)
 		end)
 end
