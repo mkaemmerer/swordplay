@@ -416,6 +416,14 @@ flow_meta={
 				end)
 		end,
 		handle_err=function(m,f)
+			-- todo: double check semantics
+			-- test-case
+			-- flw
+			--  :handle_err(catch1)
+			--  :flatmap(f)
+			--  :handle_err(catch2)
+			-- catch2 seems to get called
+			-- with err from flw?
 			return flow.create(
 				function(nxt, done, err)
 					m.go(nxt, done, function(e)
