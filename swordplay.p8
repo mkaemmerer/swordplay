@@ -26,19 +26,23 @@ function _init()
 
 	-- flow
 	local game_flow = flow.seq({
-		presented_by_scn,
-		flow.loop(
-			flow.seq({
-				title_scn,
-				swordplay_scn,
-			})
+	-- debug ★
+--		presented_by_scn,
+		flow.retry(
+			flow.loop(
+				flow.seq({
+					title_scn,
+					swordplay_scn,
+				})
+			)
 		),
 	})
 	
 	transition_flow(game_flow).go(
 		function(s)
- 		scn = s
+			scn = s
 		end,
+		noop,
 		noop
 	)
 end
@@ -406,25 +410,23 @@ flow_meta={
 		flatmap=function(m,f)
 			return flow.create(
 				function(nxt, done, err)
-		   m:map(f).go(nxt, function(n)
-		    n.go(nxt, done, err)
-		   end, err)
-		  end)
+					m:map(f).go(nxt, function(n)
+						n.go(nxt, done, err)
+					end, err)
+				end)
 		end,
 		handle_err=function(m,f)
 			return flow.create(
 				function(nxt, done, err)
 					m.go(nxt, done, function(e)
-						f(e).go(nxt,done,err)
+						f(e).go(nxt, done, err)
 					end)
 				end)
 		end,
 		wrap=function(m,f)
 			return flow.create(
 				function(nxt,done,err)
-					m.go(function(x)
-						nxt(f(x))
-					end, done, err)
+					m.go(compose(f,nxt), done, err)
 				end
 			)
 		end
@@ -1677,22 +1679,23 @@ end
 
 -- wrap a flow as a scene flow
 function flow_scn(flw)
-	return flow.once(function(nxt)
+	return flow.create(function(nxt,done,err)
 		local scn = nil
 		flw.go(
 			function(s)
 				scn = s
 			end,
-			nxt
+			done,
+			err
 		)
-		return {
+		nxt({
 			update=function(_,dt)
 				scn:update(dt)
 			end,
 			draw=function(_)
 				scn:draw()
 			end,
-		}
+		})
 	end)
 end
 
@@ -1831,11 +1834,11 @@ end)
 
 function transition_flow(f)
 	local prev
-	return flow.create(function(nxt,done)
+	return flow.create(function(nxt,done,err)
 		f.go(function(cur)
 			nxt(transition(cur, prev))
 			prev = cur
-		end, done)
+		end, done, err)
 	end)
 end
 
@@ -1926,7 +1929,7 @@ function battle_intro_flow(text)
 end
 
 
-function victory_flow()
+function victory_menu()
 	local victory_screen = ui_group({
 		ui_text("victory", 7)
 			:align("center","center")
@@ -1949,7 +1952,7 @@ function victory_flow()
 	return menu_flow(ui)
 end
 
-function defeat_flow()
+function defeat_menu()
 	local defeat_screen = ui_group({
 		ui_text("defeat", 7)
 			:align("center","center")
@@ -2118,6 +2121,12 @@ bad_retorts = list.from_tbl({
 	"...oh yeah?",
 })
 
+-- debug
+all_retorts = {}
+for tbl in all(dialogue) do
+	add(all_retorts, tbl.retort)
+end
+
 -- index table in both directions
 comeback_retorts = {}
 retort_insults = {}
@@ -2137,7 +2146,8 @@ end
 
 start_battle_state = {
 	insults={},
-	retorts={},
+	-- debug ★
+	retorts=all_retorts,
 	tide=0,
 	max_tide=2,
 	used_insults={},
@@ -2393,7 +2403,7 @@ function battle(state,enemy,turn)
 	if is_victory(state)
 	or (turn == "enemy" and #enemy_insults == 0)
 	then
-		return flow.of({"victory", state})
+		return flow.of(state)
 	end
 
 	local do_turn = turn == "player"
@@ -2407,7 +2417,7 @@ function battle(state,enemy,turn)
 			or  "player"
 		
 		if not result then
-			return flow.of({"defeat", newstate})
+			return flow.err(newstate)
 		end
 		
 		return battle(newstate,enemy,opponent)
@@ -2417,90 +2427,76 @@ end
 -->8
 -- swordplay scene
 
-function battle_enemies()
-	return shuffle({
-		enemy_1,
-		enemy_2
-	})
+function handle_defeat(state)
+	return defeat_menu()
+		:flatmap(function(r)
+			if r == "try again" then			
+				return flow.err({"retry", state})
+			else
+				return flow.err({"restart", nil})
+			end
+		end)
 end
 
-function swordplay(battle_num, enemies, state)
-	if battle_num > #enemies then
-		return final_battle(state)
+function retry_with(f)
+	return function(e)
+		local choice, new_state = unpack(e)
+		if choice == "retry" then
+			return f(new_state)
+		end
+		return flow.err(e)
 	end
-	
-	local function handle_battle(r)
-		local res,next_state = unpack(r)
-		if res == "victory" then
-			return victory_flow()
-				:map(function()
-					return {"next", next_state}
-				end)
-		end
-		if res == "defeat" then
-			return defeat_flow()
-				:map(function(r)
-					if r == "try again" then			
-						return {"retry", next_state}
-					else
-						return {"restart", next_state}
-					end
-				end)
-		end
-	end
-	
-	local function handle_next(r)
-		local res,next_state = unpack(r)
-		
-		if res == "next" then
-			return swordplay(
-				battle_num+1,
-				enemies,
-				next_state
-			)
-		end
-		if res == "restart" then
-			return flow.of(nil)
-		end
-		if res == "retry" then
-			return swordplay(
-				1,
-				battle_enemies(),
-				next_state
-			)
-		end
-	end
-	
-	local enemy = enemies[battle_num]
-	
-	return flow_scn(
-		flow.seq({
-			battle_intro_flow("battle "..battle_num),
+end
+
+function enemy_battle(enemy,i)
+	return function(state)
+		local btl = flow.seq({
+			battle_intro_flow("battle "..i),
 			battle(
 				start_battle(state,enemy),
 				enemy,
 				"player"
 			)
 		})
-		:flatmap(handle_battle)
-		:wrap(ui_scn)
-	)
-	:flatmap(handle_next)
+		:flatmap(function(new_state)
+			return victory_menu()
+				:map(const(new_state))
+			end
+		)
+		:handle_err(handle_defeat)
+		return flow_scn(btl:wrap(ui_scn))
+	end
 end
 
-function final_battle(state)	
-	return flow_scn(
-		flow.seq({
-			battle_intro_flow("final battle"),
-		}):wrap(ui_scn)
-	)
+function final_battle(state)
+	local btl = flow.seq({
+		battle_intro_flow("final battle"),
+		-- todo: battle goes here
+		flow.of(state),
+		battle_intro_flow("complete!"),
+	})
+	:handle_err(handle_defeat)
+	return flow_scn(btl:wrap(ui_scn))
 end
 
-swordplay_scn = swordplay(
-	1,
-	battle_enemies(),
-	start_battle_state
-)
+function swordplay(state)
+	-- randomize enemy order
+	local enemies = shuffle({
+		enemy_1,
+		enemy_2
+	})
+	return flow.of(state)
+		:flatmap(enemy_battle(enemies[1],1))
+		:flatmap(enemy_battle(enemies[2],2))
+		:handle_err(retry_with(swordplay))
+		-- checkpoint!
+		:flatmap(function(state)
+			return final_battle(state)
+				:handle_err(retry_with(final_battle))
+		end)
+end
+
+swordplay_scn = swordplay(start_battle_state)
 
 __gfx__
 00000000000000007077770750555505077777700007000000000000000000000000000000000000000000000000000000000000000000000000000000000000
