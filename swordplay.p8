@@ -2175,25 +2175,6 @@ for tbl in all(dialogue) do
 	retort_insults[tbl.retort] = tbl.insult
 end
 
-
--- battle state:
---   * insults - available insults
---   * retorts - available retorts
---   * tide - the "tide" of battle
---      0.0: player loses
---      0.5: even odds
---      1.0: player wins
-
-start_battle_state = {
-	insults={},
-	-- debug ★
-	retorts=all_retorts,
-	tide=0,
-	max_tide=2,
-	enemy=ui_empty,
-	used_insults={},
-}
-
 function set_has(set,x)
 	return list_any(set,function(y)
 		return x==y
@@ -2209,35 +2190,57 @@ function set_add(set,x)
 	return ret
 end
 
+function lens_set(lens)
+	return function(val)
+		return function(state)
+			return lens.set(state,val)
+		end
+	end
+end
+
+function lens_append(lens)
+	return function(val)
+		return function(state)
+			local set = set_add(
+				lens.get(state),
+				val
+			)
+			return lens.set(state, set)
+		end
+	end
+end
+
+-- battle state:
+--   * insults - available insults
+--   * retorts - available retorts
+--   * tide - the "tide" of battle
+--      0.0: player loses
+--      0.5: even odds
+--      1.0: player wins
+
+start_battle_state = {
+	insults={},
+	-- debug ★
+	retorts=all_retorts,
+	tide=0,
+	max_tide=2,
+	enemy=nil,
+	used_insults={},
+}
+
+
 function is_victory(state)
 	return state.tide >= state.max_tide
 end
 
-function set_tide(tide)
-	local lens = prop_lens("tide")
-	return function(state)
-		return lens.set(state, tide)
-	end
-end
+set_tide     = lens_set(prop_lens("tide"))
+set_max_tide = lens_set(prop_lens("max_tide"))
+set_enemy    = lens_set(prop_lens("enemy"))
+reset_used   = lens_set(prop_lens("used_insults"))({})
 
-function set_enemy(enemy)
-	local lens = prop_lens("enemy")
-	return function(state)
-		return lens.set(state, enemy)
-	end
-end
-
-function set_max_tide(max_tide)
-	local lens = prop_lens("max_tide")
-	return function(state)
-		return lens.set(state, max_tide)
-	end
-end
-
-function reset_used(state)
-	local lens = prop_lens("used_insults")
-	return lens.set(state, {})
-end
+learn_insult = lens_append(prop_lens("insults"))
+learn_retort = lens_append(prop_lens("retorts"))
+use_insult   = lens_append(prop_lens("used_insults"))
 
 function start_battle(state,enemy)
 	return chain({
@@ -2246,39 +2249,6 @@ function start_battle(state,enemy)
 		set_enemy(enemy),
 		reset_used,
 	})(state)
-end
-
-function learn_insult(insult)
-	local lens = prop_lens("insults")
-	return function(state)
-		local insults = set_add(
-			lens.get(state),
-			insult
-		)
-		return lens.set(state, insults)
-	end
-end
-
-function learn_retort(retort)
-	local lens = prop_lens("retorts")
-	return function(state)
-		local retorts = set_add(
-			lens.get(state),
-			retort
-		)
-		return lens.set(state, retorts)
-	end
-end
-
-function use_insult(insult)
-	local lens = prop_lens("used_insults")
-	return function(state)
-		local used_insults = set_add(
-			lens.get(state),
-			insult
-		)
-		return lens.set(state, used_insults)
-	end
 end
 
 function resolve_attack(state,insult,retort)
