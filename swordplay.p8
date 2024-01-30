@@ -371,20 +371,6 @@ function prop_lens(k)
 	}
 end
 
-function compose_lens(l1,l2)
-	return {
-		get=function(s)
-			return l2.get(l1.get(s))
-		end,
-		set=function(s, x)
-			local inner = l1.get(s)
-			return l1.set(s, l2.set(inner, x))
-		end,
-	}
-end
-
-chain_lens = reduce(compose_lens, id_lens)
-
 function tbl_copy(tbl)
 	local ret = {}
 	for k,v in pairs(tbl) do
