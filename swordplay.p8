@@ -1583,6 +1583,7 @@ function text_flow(text)
 end
 
 -- wrap a flow as a scene flow
+-- todo: unify this with transition flow?
 function flow_scn(flw)
 	return flow.create(function(nxt,done,err)
 		local scn = nil
