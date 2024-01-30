@@ -135,14 +135,6 @@ end
 
 chain = reduce(compose,id)
 
-function copy(list)
-	local ret = {}
-	for x in all(list) do
-		add(ret, x)
-	end
-	return ret
-end
-
 function lerp(a,b,t)
 	return a + t*(b-a)
 end
@@ -217,6 +209,14 @@ pair = lift2(pack)
 
 list = {}
 
+function list_copy(list)
+	local ret = {}
+	for x in all(list) do
+		add(ret, x)
+	end
+	return ret
+end
+
 function list_map(l,f)
 	local ret = {}
 	for i,x in pairs(l) do
@@ -289,7 +289,7 @@ function list.create(tbl)
 end
 
 function list.from_tbl(tbl)
-	return list.create(copy(tbl))
+	return list.create(list_copy(tbl))
 end
 
 function list.from_range(lo,hi)
@@ -1385,14 +1385,6 @@ wipe_left = chain({
 -- cursors --------------------
 
 ix_array = {}
-
-function list_copy(tbl)
-	local ret = {}	
-	for x in all(tbl) do
-		add(ret, x)
-	end
-	return ret
-end
 
 -- shuffle a list in place
 function shuffle(xs)
