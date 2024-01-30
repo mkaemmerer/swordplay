@@ -9,11 +9,19 @@ __lua__
 --   - lose after 2 misses?
 --  story:
 --   - boss fight with innuendo
---  sfx: beep speak
---  sfx: sword clash
---  music: battle music
---  anim: character sprites
---  anim: battle animations
+--  ui:
+--   - better hud?
+--   - show result summary
+--  sfx:
+--   - beep speak
+--   - sword clash
+--  music:
+--   - battle loop
+--   - boss battle loop
+--   - victory/defeat tune
+--  anim:
+--   - character sprites
+--   - battle animations
 
 -- global constants
 debug = false
