@@ -183,15 +183,6 @@ function monad_seq(empty)
 	)
 end
 
-function monoid_concat(empty)
-	return reduce(
-		function(a,m)
-			return a:concat(m)
-		end,
-		empty
-	)
-end
-
 function lift2(f)
 	return function(mx,my)
 		return mx:flatmap(function(x)
@@ -642,15 +633,6 @@ function draw_with_offset(dx, dy)
 	end)
 end
 
-
-draw_seq = suspend(
-	function(tbl)
-		foreach(tbl, function(cmd)
-			cmd()
-		end)
-	end
-)
-
 skip_draw = const(noop)
 
 function draw_with_outline_4(col)
@@ -685,7 +667,6 @@ function draw_with_outline_9(col)
 		draw()
 	end)
 end
-
 
 function draw_with_shadow(col,dx,dy)
 	dx = dx or 0
@@ -880,15 +861,6 @@ function ui.from_rdr(r)
 end
 
 -- prims
-function ui_box(fill,stroke)
-	return ui.from_draw(function(x,y,w,h)
-		rectfill(x,y,x+w-1,y+h-1,fill)
-		if stroke!=nil then
-			rect(x,y,x+w-1,y+h-1,stroke)
-		end
-	end)
-end
-
 function ui_text(str,col)
 	local w=text_width(str)
 	local h=text_height(str)
@@ -1224,64 +1196,23 @@ input_await_❎🅾️ = behavior.par({
 
 -- grids ----------------------
 
-function idx_grid(rows,cols)
-	return pair(
-		list.from_range(1,cols),
-		list.from_range(1,rows)
-	)
-end
-
-function square_grid(size,rows,cols)
-	return idx_grid(rows,cols)
-		:map(function(tbl)
-			local i,j = unpack(tbl)
-			return {
-				(i-0.5)*size,
-				(j-0.5)*size,
-				i,
-				j,
-			}
-		end)
-end
-
 function diamond_grid(size,rows,cols)
 	local s = size*sqrt(2)
 	local dx = s
 	local dy = s/2
 	
-	return idx_grid(rows,cols)
-		:map(function(tbl)
-			local i,j = unpack(tbl)
-			return {
-				(i-1)*dx + (j%2)*0.5*dx,
-				(j-0.5)*dy,
-				i,
-				j,
-			}
-		end)
-end
-
-function hex_grid(size,rows,cols)
-	local dx = flr(sqrt(3) * 0.666 * size)
-	local dy = size
-	
-	return idx_grid(rows,cols)
-		:map(function(tbl)
-			local i,j = unpack(tbl)
-			return {
-				(i-1)*dx + (j%2)*0.5*dx,
-				(j-0.5)*dy,
-				i,
-				j,
-			}
-		end)
-end
-
-
-function draw_grid(grid)
-	foreach(grid, function(p)
-		local x,y = unpack(p)
-		pset(x,y,14)
+	return pair(
+		list.from_range(1,cols),
+		list.from_range(1,rows)
+	)
+	:map(function(tbl)
+		local i,j = unpack(tbl)
+		return {
+			(i-1)*dx + (j%2)*0.5*dx,
+			(j-0.5)*dy,
+			i,
+			j,
+		}
 	end)
 end
 
