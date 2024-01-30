@@ -1240,15 +1240,6 @@ function dots.translate(dx,dy)
 	end)
 end
 
-function dots.rotate(angle)
-	return dots.transform(function(t,x,y)
-		local c,s = cos(angle),sin(angle)
-		local xx = c*x + s*y
-		local yy = s*x - c*y
-		return t,xx,yy
-	end)
-end
-
 function dots.scale(sx,sy)
 	sy = sy or sx
 	return dots.transform(function(t,x,y)
@@ -1258,28 +1249,11 @@ function dots.scale(sx,sy)
 	end)
 end
 
-function dots.timeshift_x(fac)
-	return dots.transform(function(t,x,y)
-		return t+fac*x,x,y
-	end)
-end
-
-function dots.timeshift_y(fac)
-	return dots.transform(function(t,x,y)
-		return t+fac*y,x,y
-	end)
-end
-
 function dots.ease(f)
 	return dots.transform(function(t,x,y)
 		return f(t),x,y
 	end)
 end
-
-function dots.time(t,x,y)
-	return t
-end
-
 
 function draw_dots(grid,field)
 	return function(t)
@@ -1302,15 +1276,15 @@ scale_to_grid = chain({
 })
 
 wipe_left = chain({
-	dots.timeshift_x(2),
-	dots.timeshift_y(1),
 	dots.ease(function(t)
 		return (t*3.5)-1.25
 	end),
 	dots.map(function(r)
 		return 0.6 * r
 	end)
-})(dots.time)
+})(function(t,x,y)
+	return t+2*x+y
+end)
 
 
 -- cursors --------------------
