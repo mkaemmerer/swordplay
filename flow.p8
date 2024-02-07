@@ -1414,24 +1414,16 @@ flow_meta={
 		flatmap=function(m,f)
 			return flow.create(
 				function(nxt, done, err)
-		   m:map(f).go(nxt, function(n)
-		    n.go(nxt, done, err)
-		   end, err)
-		  end)
+					m:map(f).go(nxt, function(n)
+						n.go(nxt, done, err)
+					end, err)
+				end)
 		end,
-		-- todo: double check semantics
-		-- test-case
-		-- flw
-		--  :handle_err(catch1)
-		--  :flatmap(f)
-		--  :handle_err(catch2)
-		-- catch2 seems to get called
-		-- with err from flw?
 		handle_err=function(m,f)
 			return flow.create(
 				function(nxt, done, err)
 					m.go(nxt, done, function(e)
-						f(e).go(nxt,done,err)
+						f(e).go(nxt, done, err)
 					end)
 				end)
 		end,
@@ -1460,16 +1452,16 @@ function flow.of(value)
 end
 
 function flow.err(e)
- return flow.create(function(nxt, done, err)
-  err(e)
- end)
+	return flow.create(function(nxt, done, err)
+		err(e)
+	end)
 end
 
 function flow.once(make_scene)
- return flow.create(
-	 function(nxt, done)
-	  nxt(make_scene(once(done)))
-	 end)
+	return flow.create(
+		function(nxt, done)
+			nxt(make_scene(once(done)))
+		end)
 end
 
 function flow.defer(f)
@@ -1604,18 +1596,36 @@ function count_scn(n)
 			return flow.of(nil)
 		end
 		if sel == "error" then
-			return flow.err(nil)
+			return flow.err(n)
 		end
 	end)
 end
 
-menu_scn = flow.retry(
-	flow.seq({
-		count_scn("1"),
-		count_scn("2"),
-		count_scn("3"),
+function menu_test()
+	local function menu_initial()
+		return flow.seq({
+			count_scn("1"),
+			count_scn("2"),
+			count_scn("3"),
+		}):handle_err(menu_initial)
+	end
+	local function menu_final()
+		return flow.seq({
+			count_scn("4"),
+			count_scn("5"),
+		}):handle_err(menu_final)
+	end
+
+	return flow.seq({
+		menu_initial(),
+		menu_final(),
 	})
-)
+end
+
+menu_scn = menu_test()
+:flatmap(function()
+	return count_scn("6")
+end)
 :wrap(ui_scn)
 
 __gfx__

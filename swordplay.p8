@@ -400,14 +400,6 @@ flow_meta={
 				end)
 		end,
 		handle_err=function(m,f)
-			-- todo: double check semantics
-			-- test-case
-			-- flw
-			--  :handle_err(catch1)
-			--  :flatmap(f)
-			--  :handle_err(catch2)
-			-- catch2 seems to get called
-			-- with err from flw?
 			return flow.create(
 				function(nxt, done, err)
 					m.go(nxt, done, function(e)
@@ -426,21 +418,21 @@ flow_meta={
 }
 
 function flow.create(go)
- return setmetatable({
- 	go=go
- },flow_meta)
+	return setmetatable({
+		go=go
+	},flow_meta)
 end
 
 function flow.of(value)
- return flow.create(function(nxt, done)
-  done(value)
- end)
+	return flow.create(function(nxt, done)
+		done(value)
+	end)
 end
 
 function flow.err(e)
- return flow.create(function(nxt, done, err)
-  err(e)
- end)
+	return flow.create(function(nxt, done, err)
+		err(e)
+	end)
 end
 
 function flow.once(make_scene)
@@ -2425,6 +2417,18 @@ function enemy_battle(enemy,i)
 	end
 end
 
+function enemy_battles(state)
+	-- randomize enemy order
+	local enemies = shuffle({
+		enemy_1,
+		enemy_2
+	})
+	return flow.of(state)
+		:flatmap(enemy_battle(enemies[1],1))
+		:flatmap(enemy_battle(enemies[2],2))
+		:handle_err(retry_with(enemy_battles))
+end
+
 function final_battle(state)
 	local btl = flow.seq({
 		battle_intro_flow("final battle"),
@@ -2436,26 +2440,11 @@ function final_battle(state)
 	})
 	:handle_err(handle_defeat)
 	return flow_scn(btl:wrap(ui_scn))
+		:handle_err(retry_with(final_battle))
 end
 
-function swordplay(state)
-	-- randomize enemy order
-	local enemies = shuffle({
-		enemy_1,
-		enemy_2
-	})
-	return flow.of(state)
-		:flatmap(enemy_battle(enemies[1],1))
-		:flatmap(enemy_battle(enemies[2],2))
-		:handle_err(retry_with(swordplay))
-		-- checkpoint!
-		:flatmap(function(state)
-			return final_battle(state)
-				:handle_err(retry_with(final_battle))
-		end)
-end
-
-swordplay_scn = swordplay(start_battle_state)
+swordplay_scn = enemy_battles(start_battle_state)
+	:flatmap(final_battle)
 
 __gfx__
 00000000000000007077770750555505077777700007000000000000000007707700000000000000000000000000000000000000000000000000000000000000
@@ -2499,8 +2488,8 @@ __gfx__
 00000000000007777777007000000000000000000000077777777000000000000000000000000777777707000000000070000000000000077777770000007000
 00000000000007777777000000000000000000000000077777777000000000000000000000000077777007707777000077000000000000077777700000700070
 70000000000000777770077700000000070000000000007777770000000000000000000000000007770077777777700007700000000000007777700000777770
-77000000000000077700007777000000077000000000007777700000000000070000000000007770000770777777700000770000000000000777000700077700
-07700000000000000000077077770000007700000000000777000770770000077000000000077777077707777777770000077000000000070000070077000070
+77000000000000077700007777000000077000000000007777700000000000000000000000007770000770777777700000770000000000000777000700077700
+07700000000000000000077077770000007700000000000777000770770000007000000000077777077707777777770000077000000000070000070077000070
 00770000000000700007770070777000000770000000000000000777777000007700000000777770777077777777777000007700000000770077077077707770
 00077000000000007777777070707700000077000000000700770777777700000770000000777777707777777077777000000770000007770777070077777770
 00007700000007700777777700700070000007700000007707770777777770000077000000777777707777777707777700000077077070070770770770777770
