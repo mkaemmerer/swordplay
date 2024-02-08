@@ -682,49 +682,8 @@ function ease.quad_in_out(x)
 		or  1 - (-2*x + 2)^2 / 2
 end
 
+
 -- text utils -----------------
-function wrap_lines(txt,width)
-	local buffer=""
-	local len = 0
-
-	for i, word in words(txt) do
-		local w = word_width(word)
-		if len+w > width then
-			-- push next word to next line
-			buffer = buffer.."\n"..word
-			len=w
-		else
-			-- next word still fits on the line
-			buffer = buffer..word
-			len += w
-		end
-		
-		if txt[i-1] == "\n" then
-			-- word break is also a line break
-			buffer = buffer.."\n"
-			len=0
-		else
-			-- word break is a space
-			buffer = buffer.." "
-			len += 4
-		end
-	end
-	
-	return buffer
-end
-
-function words(txt)
-	local function iter(txt, start)
-		if start > #txt then return nil end
-		for i=start,#txt do
-			if txt[i] == " " or txt[i] == "\n" then
-				return i+1, sub(txt,start,i-1)
-			end
-		end
-		return #txt+1, sub(txt,start,#txt)
-	end
-	return iter, txt, 1
-end
 
 function word_width(word)
 	-- todo: adjust for special
@@ -749,7 +708,7 @@ function text_height(txt)
 	-- todo: wrong result
 	-- when txt has p8scii
 	-- tall mode turned on
-	local height=6
+	local height=5
 	for i=1,#txt do
 		local c = txt[i]
 		if c=="\n" then
@@ -757,6 +716,52 @@ function text_height(txt)
 		end
 	end
 	return height
+end
+
+function wrap_line(width)
+	return function(lne)
+		local buffer, len = "", 0
+		local words = text_split(lne," ")
+		
+		for i, word in ipairs(words) do
+			local w = word_width(word)
+			if i == 1 then
+				buffer = word
+				len=w
+			else
+				if len+4+w > width then
+					-- push next word to next line
+					buffer = buffer.."\n"..word
+					len=w
+				else
+					-- next word still fits on the line
+					buffer = buffer.." "..word
+					len += 4+w
+				end
+			end
+		end
+		return buffer
+	end
+end
+
+function wrap_lines(txt, width)
+	return text_join(
+		text_split(txt, "\n")
+			:map(wrap_line(width)),
+		"\n"
+	)
+end
+
+function text_split(txt,sep)
+	return list.from_tbl(split(txt, sep, false))
+end
+
+function text_join(lst, sep)
+	return lst:reduce(function(acc,word)
+		return acc == ""
+			and word
+			or acc .. sep .. word
+	end, "")
 end
 
 
@@ -1482,8 +1487,7 @@ function menu_panel(c, col)
 		col == "dark"
 			and menu_box_dark
 			or  menu_box,
-		ui_clip(c:inset(3))
-			:inset(1),
+		ui_clip(c):inset(1),
 	})
 end
 
@@ -1937,8 +1941,11 @@ function menu_option(txt,cb)
 				:size(function(dims)
 					local w,h = unpack(dims)
 					return w - 12
-				end,"fit")
-		},"inline",4)
+				end, function(dims)
+					local w,h = unpack(dims)
+					return text_height(wrap_lines(txt,w - 12))
+				end)
+		},"inline",4):inset(3)
 	end
 	
 	return cursor_single(
@@ -1951,7 +1958,6 @@ function menu_option(txt,cb)
 	)
 end
 
-
 function menu_list(opts)
 	local function make_stack(x,i)
 		local cs_focus = list_map(opts, function(c,j)
@@ -1962,9 +1968,9 @@ function menu_list(opts)
 		local cs_blur = list_map(opts, function(c,j)
 			return c:get():blur()
 		end)
-		return ui_layout(cs_blur, "stack", 4)
+		return menu_scroll(cs_blur, -1, 2)
 			:focusable(
-				menu_scroll(cs_focus, i, 4),
+				menu_scroll(cs_focus, i, 2),
 				x.select
 			)
 	end
@@ -1994,7 +2000,7 @@ function menu_scroll(opts, idx, m)
 				if dy+ch > h then
 					-- selected opt is too far
 					-- down on the list
-					scroll = h - (dy+ch+m)
+					scroll = h - (dy+ch)
 				end
 			end
 			-- increment offset
