@@ -2025,12 +2025,13 @@ for tbl in all(dialogue) do
 	add(all_retorts, tbl.retort)
 end
 
--- index table in both directions
-comeback_retorts = {}
-retort_insults = {}
+-- index table of comebacks
+comebacks = {}
 for tbl in all(dialogue) do
-	comeback_retorts[tbl.insult] = tbl.retort
-	retort_insults[tbl.retort] = tbl.insult
+	comebacks[tbl.insult] = tbl.retort
+	if tbl.flirt then
+		comebacks[tbl.flirt] = tbl.retort
+	end
 end
 
 function set_has(set,x)
@@ -2110,7 +2111,7 @@ function start_battle(state,enemy)
 end
 
 function resolve_attack(state,insult,retort)
-	local success = not (retort == comeback_retorts[insult])
+	local success = not (retort == comebacks[insult])
 	local new_state = chain({
 		-- learn a retort
 		success
@@ -2122,7 +2123,11 @@ function resolve_attack(state,insult,retort)
 end
 
 function resolve_defend(state,insult,retort)
-	local success = retort == comeback_retorts[insult]
+	local success = retort == comebacks[insult]
+	-- todo: player shouldn't
+	-- be able to learn
+	-- captain's lines
+
 	-- learn new insult,
 	-- update the battle
 	-- win points after successful
@@ -2143,6 +2148,7 @@ end
 -- a fighter has:
 -- * insults - insults they will attack with
 -- * retorts - retorts they can defend with
+-- * voice - a behavior to play sfx (beep speak)
 
 function beep_speak(sfx_idx, spd)
 	return behavior.loop(behavior.seq({
@@ -2155,9 +2161,9 @@ end
 
 
 function enemy_get_retort(enemy,insult)
-	local has_retort = set_has(enemy.retorts, comeback_retorts[insult])
+	local has_retort = set_has(enemy.retorts, comebacks[insult])
 	local retort = has_retort
-		and comeback_retorts[insult]
+		and comebacks[insult]
 		or  "ouch..."
 	return retort		
 end
@@ -2170,8 +2176,10 @@ enemy_1 = {
 	},
 	retorts = {
 		dialogue[1].retort,
+		dialogue[2].retort,
 		dialogue[3].retort,
-		dialogue[6].retort
+		dialogue[6].retort,
+		dialogue[7].retort,
 	},
 	draw = ui_spr(64,4,4),
 	voice = beep_speak(60,2/60),
@@ -2182,19 +2190,38 @@ enemy_2 = {
 		dialogue[4].insult,
 	},
 	retorts = {
-		dialogue[2].retort,
+		dialogue[3].retort,
 		dialogue[4].retort,
-		dialogue[6].retort
+		dialogue[5].retort,
+		dialogue[2].retort,
+		dialogue[7].retort,
 	},
 	draw = ui_spr(68,4,4),
 	voice = beep_speak(60,2/60),
 }
-final_enemy = {
+enemy_3 = {
 	insults = {
-		dialogue[1].insult,
-		dialogue[2].insult,
-		dialogue[3].insult,
-		dialogue[4].insult,
+		dialogue[5].insult,
+		dialogue[6].insult,
+	},
+	retorts = {
+		dialogue[5].retort,
+		dialogue[6].retort,
+		dialogue[1].retort,
+		dialogue[4].retort,
+		dialogue[7].retort,
+	},
+	draw = ui_spr(72,4,4),
+	voice = beep_speak(60,2/60),
+}
+captain = {
+	insults = {
+		dialogue[1].flirt,
+		dialogue[2].flirt,
+		dialogue[3].flirt,
+		dialogue[4].flirt,
+		dialogue[5].flirt,
+		dialogue[6].flirt,
 	},
 	draw = ui_spr(76,4,4),
 	voice = beep_speak(61,1/60)
@@ -2210,7 +2237,6 @@ function unused_insults(is,state)
 		end)
 end
 
--- player adapter
 player_adapter = {
 	get_insult = function(state)
 		local available_insults =
@@ -2235,8 +2261,6 @@ player_adapter = {
 	voice = beep_speak(61,1/60),
 }
 
-
--- enemy adapter
 function enemy_adapter(enemy)
 	return {
 		get_insult=function(state)
@@ -2255,6 +2279,21 @@ function enemy_adapter(enemy)
 	}
 end
 
+function captain_adapter(enemy)
+	return {
+		get_insult=function(state)
+			-- captain always uses his lines in order
+			return flow.defer(function()
+				return unused_insults(enemy.insults,state)[1]
+			end)
+		end,
+		get_retort=function(state,insult)
+			-- captain doesn't need to retort
+			assert(false, "error")
+		end,
+		voice = enemy.voice,
+	}
+end
 
 function battle_turn(state,attacker,defender,resolve)
 	return attacker.get_insult(state)
@@ -2287,6 +2326,15 @@ function enemy_turn(state,enemy)
 	return battle_turn(
 		state,
 		enemy_adapter(enemy),
+		player_adapter,
+		resolve_defend
+	)
+end
+
+function captain_turn(state,enemy)
+	return battle_turn(
+		state,
+		captain_adapter(enemy),
 		player_adapter,
 		resolve_defend
 	)
@@ -2326,7 +2374,7 @@ end
 -- instead of trading insults
 -- only enemy delivers insults
 -- and player must defend
-function one_sided_battle(state,enemy)
+function captain_battle(state,enemy)
 	local enemy_insults = unused_insults(
 		enemy.insults,
 		state
@@ -2337,13 +2385,13 @@ function one_sided_battle(state,enemy)
 		return flow.of(state)
 	end
 
-	return enemy_turn(state,enemy)
+	return captain_turn(state,enemy)
 		:flatmap(function(res)
 			local result,newstate = unpack(res)			
 			if not result then
 				return flow.err(newstate)
 			end
-			return one_sided_battle(newstate,enemy)
+			return captain_battle(newstate,enemy)
 		end)
 end
 
@@ -2395,20 +2443,22 @@ function enemy_battles(state)
 	-- randomize enemy order
 	local enemies = shuffle({
 		enemy_1,
-		enemy_2
+		enemy_2,
+		enemy_3,
 	})
 	return flow.of(state)
 		:flatmap(enemy_battle(enemies[1],1))
 		:flatmap(enemy_battle(enemies[2],2))
+		:flatmap(enemy_battle(enemies[3],3))
 		:handle_err(retry_with(enemy_battles))
 end
 
 function final_battle(state)
 	local btl = flow.seq({
 		battle_intro_flow("final battle"),
-		one_sided_battle(
-			start_battle(state,final_enemy),
-			final_enemy
+		captain_battle(
+			start_battle(state,captain),
+			captain
 		),
 		battle_intro_flow("complete!"),
 	})
