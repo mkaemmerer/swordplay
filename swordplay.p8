@@ -2017,26 +2017,35 @@ end
 
 dialogue = {
 	{
+		insult="i'll cut you down to size",
+		flirt="you're a colossal pain in my ass",
+		retort="aww, am i too big for you?",
+	},
+	{
 		insult="you dare challenge me?",
-		retort="you're hardly a challenge",
+		flirt="topping me won't be easy",
+		retort="i'd hardly call you a challenge",
 	},
 	{
 		insult="i've seen mannequins less stiff than your form",
+		flirt="what's the matter? you look tense",
 		retort="not as stiff as you'll be when i'm done",
 	},
 	{
 		insult="get on your knees and beg for your life!",
-		retort="i could do it standing if you weren't so tiny",
-	},
-	{
-		insult="you've never seen moves like mine. do try to keep up.",
-		retort="i could do this all night long",
+		flirt="missed again! you always aim too high",
+		retort="i wouldn't have to kneel if you weren't so tiny",
 	},
 	{
 		insult="come on, is that all you've got?",
+		flirt="come on, give it to me harder!",
 		retort="just giving you time to prepare yourself",
 	},
-	
+	{
+		insult="you've never seen moves like mine. do try to keep up.",
+		flirt="i'll warn you, i like to go all night...",
+		retort="i could do this all night long",
+	},
 	--
 	{
 		insult="you smell!",
