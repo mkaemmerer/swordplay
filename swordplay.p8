@@ -448,12 +448,6 @@ function flow.once(make_scene)
 	 end)
 end
 
-function flow.defer(f)
-	return flow.create(function(nxt, done)
-		done(f())
-	end)
-end
-
 flow.seq = monad_seq(flow.of(nil))
 
 flow.loop = monad_loop
@@ -2110,11 +2104,13 @@ end
 function lens_append(lens)
 	return function(val)
 		return function(state)
-			local set = set_add(
-				lens.get(state),
-				val
+			return lens.set(
+				state,
+				set_add(
+					lens.get(state),
+					val
+				)
 			)
-			return lens.set(state, set)
 		end
 	end
 end
@@ -2139,14 +2135,16 @@ function is_victory(state)
 	return state.tide >= state.max_tide
 end
 
-set_tide     = lens_set(prop_lens("tide"))
-set_max_tide = lens_set(prop_lens("max_tide"))
-set_enemy    = lens_set(prop_lens("enemy"))
-reset_used   = lens_set(prop_lens("used_insults"))({})
+set_prop     = compose(prop_lens, lens_set)
+set_tide     = set_prop("tide")
+set_max_tide = set_prop("max_tide")
+set_enemy    = set_prop("enemy")
+reset_used   = set_prop("used_insults")({})
 
-learn_insult = lens_append(prop_lens("insults"))
-learn_retort = lens_append(prop_lens("retorts"))
-use_insult   = lens_append(prop_lens("used_insults"))
+append_prop  = compose(prop_lens, lens_append)
+learn_insult = append_prop("insults")
+learn_retort = append_prop("retorts")
+use_insult   = append_prop("used_insults")
 
 function start_battle(state,enemy)
 	return chain({
@@ -2206,14 +2204,6 @@ function beep_speak(sfx_idx, spd)
 	}))
 end
 
-
-function enemy_get_retort(enemy,insult)
-	local has_retort = set_has(enemy.retorts, comebacks[insult])
-	local retort = has_retort
-		and comebacks[insult]
-		or  "ouch..."
-	return retort		
-end
 
 -- enemy declarations
 draw_spr = suspend(spr)
@@ -2388,16 +2378,20 @@ player_adapter = {
 function enemy_adapter(enemy)
 	return {
 		get_insult=function(state)
-			return flow.defer(function()
-				return rnd(
-					unused_insults(enemy.insults,state)
-				)
-			end)
+			local insult = rnd(
+				unused_insults(enemy.insults,state)
+			)
+			return flow.of(insult)
 		end,
 		get_retort=function(state,insult)
-			return flow.defer(function()
-				return enemy_get_retort(enemy, insult)
-			end)
+			-- pick the right retort,
+			-- if the enemy knows it
+			-- otherwise, use a generic response
+			local has_retort = set_has(enemy.retorts, comebacks[insult])
+			local retort = has_retort
+				and comebacks[insult]
+				or  "ouch..."
+			return flow.of(retort)
 		end,
 		voice = enemy.voice,
 	}
@@ -2407,9 +2401,8 @@ function captain_adapter(enemy)
 	return {
 		get_insult=function(state)
 			-- captain always uses his lines in order
-			return flow.defer(function()
-				return unused_insults(enemy.insults,state)[1]
-			end)
+			local insult = unused_insults(enemy.insults,state)[1]
+			return flow.of(insult)
 		end,
 		get_retort=function(state,insult)
 			-- captain doesn't need to retort
