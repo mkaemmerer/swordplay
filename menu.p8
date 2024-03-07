@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 41
+version 42
 __lua__
 --menu
 --by mabbees
@@ -15,7 +15,11 @@ function _init()
 	
 	menu_scn.go(function(s)
 		scn = s
-	end, noop)
+	end, function(opt)
+		cls()
+		print(opt)
+		stop()
+	end)
 	
 end
 
@@ -797,10 +801,7 @@ function ui.from_ui(c1,c2)
 		"offset",
 		"min_dims",
 		"dims",	
-		"focus",
-		"blur",
 		"update",
-		"select",
 	}
 	local copy={}
 	foreach(keys, function(key)
@@ -873,6 +874,9 @@ function ui_clip(c)
 		clip(x,y,w,h)
 		draw_ui(c, {x,y,w,h})
 		clip()
+	end)
+	:updatable(function(_,dt)
+		c:update(dt)
 	end)
 end
 
@@ -1083,32 +1087,6 @@ ui_meta = {
 		effect=ui_effect,
 		update=noop,
 		
-		-- focus
-		focusable=function(c,f,sel)
-			local focus,blur
-			focus = function(_)
-				return ui.from_ui(f, {
-					focus=focus,
-					blur=blur,
-					select=sel,
-				})
-			end
-			blur = function(_)
-				return ui.from_ui(c, {
-					focus=focus,
-					blur=blur,
-				})
-			end
-			return blur()
-		end,
-		
-		-- selection
-		selectable=function(c,f)
-			return ui.from_ui(c,{
-				select=f,
-			})
-		end,
-		
 		-- updates
 		updatable=function(c,f)
 			return ui.from_ui(c,{
@@ -1166,169 +1144,6 @@ input_await_❎🅾️ = behavior.par({
 	input_await_🅾️,
 })
 
-
--- cursors --------------------
-
-ix_array = {}
-
-function list_copy(tbl)
-	local ret = {}	
-	for x in all(tbl) do
-		add(ret, x)
-	end
-	return ret
-end
-
-ix_array_meta = {
-	__index= {
-		-- comonad
-		map = function(c,f)
-			return ix_array.create(
-				list_map(c.tbl,f),
-				c.ix
-			)
-		end,
-		extend = function(c,f)
-			return ix_array.create(
-				list_map(c.tbl, function(_,i)
-					return f(ix_array.create(c.tbl, i))
-				end),
-				c.ix
-			)
-		end,
-		-- cursor
-		get = function(c)
-			return c.tbl[c.ix]
-		end,
-		set = function(c,x)
-			local cpy = list_copy(c.tbl)
-			cpy[c.ix] = x
-			return ix_array.create(
-				cpy,
-				c.ix
-			)
-		end,
-		hasprev = function(c)
-			return c.ix > 1
-		end,
-		prev = function(c)
-			return c:hasprev()
-				and ix_array.create(c.tbl, c.ix-1)
-				or  nil
-		end,
-		first = function(c)
-			return ix_array.create(c.tbl, 1)
-		end,
-		hasnext = function(c)
-			return c.ix < #c.tbl
-		end,
-		next = function(c)
-			return c:hasnext()
-				and ix_array.create(c.tbl, c.ix+1)
-				or  nil
-		end,
-		last = function(c)
-			return ix_array.create(c.tbl, #c.tbl)
-		end,
-	}
-}
-
-function ix_array.create(tbl,ix)
-	return setmetatable({
-		tbl=tbl,
-		ix=ix or 1,
-	}, ix_array_meta)
-end
-
--- map cursors
-
-function map_cursor(c,f)
-	return {
-		get = function(_)
-			return f(c:get())
-		end,
-		set = function(_,x)
-			return map_cursor(c:set(x), f)
-		end,
-		hasprev = function(_)
-			return c:hasprev()
-		end,
-		prev = function(_)
-			return c:hasprev()
-				and map_cursor(c:prev(), f)
-				or  nil
-		end,
-		first = function(_)
-			return map_cursor(c:first(), f)
-		end,
-		hasnext = function(_)
-			return c:hasnext()
-		end,
-		next = function(_)
-			return c:hasnext()
-				and map_cursor(c:next(), f)
-				or  nil
-		end,
-		last = function(_)
-			return map_cursor(c:last(), f)
-		end,
-		map = function(_,g)
-			return map_cursor(c, compose(f,g))
-		end,
-	}
-end
-
--- fuse cursors
-
-function fuse_over(cc,f)
-	return fuse_cursor(
-		cc:set(f(cc:get()))
-	)
-end
-
-function fuse_cursor(cc)
-	return {
-		get = function(_)
-			return cc:get():get()
-		end,
-		set = function(_,x)
-			return fuse_over(cc, call("set",x))
-		end,
-		hasprev = function(_)
-			return cc:get():hasprev() or cc:hasprev()
-		end,
-		prev = function(_)
-			return cc:get():hasprev()
-				and fuse_over(cc, call("prev"))
-				or  cc:hasprev()
-					and fuse_over(cc:prev(), call("last"))
-					or  nil
-		end,
-		first = function(_)
-			return fuse_over(cc:first(), call("first"))
-		end,
-		hasnext = function(_)
-			return cc:get():hasnext() or cc:hasnext()
-		end,
-		next = function(_)
-			return cc:get():hasnext()
-				and fuse_over(cc, call("next"))
-				or  cc:hasnext()
-					and fuse_over(cc:next(), call("first"))
-					or  nil
-		end,
-		last = function(_)
-			return fuse_over(cc:last(), call("last"))
-		end,
-		map = function(x, f)
-			return map_cursor(x, f)
-		end,
-	}
-end
-
-function cursor_single(x)
-	return ix_array.create({x})
-end
 
 -- ui -------------------------
 
@@ -1397,7 +1212,6 @@ function swordplay_ui(top,mnu,opts)
 				:size("fill", menu_height),
 		}, "stack")
 		:size("fill","fill")
-		:selectable(mnu.select)
 end
 
 
@@ -1435,138 +1249,110 @@ function ui_scn(c)
 		end,
 	}
 end
+-->8
+-- menu
 
--- wrap a cursor as a flow
-function menu_flow(menu)	
-	return flow.create(function(nxt,done)
-		local function make_ui(curs)
-			return curs:get()
-				:updatable(function(scn,dt)
-					-- call underlying update
-					curs:get():update(dt)
-					-- check buttons and move selection
-					if btnp(⬆️) and curs:hasprev() then
-						nxt(make_ui(curs:prev()))
-					end
-					if btnp(⬇️) and curs:hasnext() then
-						nxt(make_ui(curs:next()))
-					end
+function menu_option(txt,is_focused)	
+	return ui_layout({
+		ui_spr(1)
+		:effect(
+			is_focused
+				and id
+				or  skip_draw
+		)
+		:translate(0,-2),
+		ui_wrap_text(txt, is_focused and 7 or 5)
+			:size(function(dims)
+				local w,h = unpack(dims)
+				return w - 12
+			end, function(dims)
+				local w,h = unpack(dims)
+				return text_height(wrap_lines(txt,w - 12))
+			end)
+	},"inline",4)
+	:inset(3)
+end
+
+function menu_list(opts,scroll)
+	return ui_layout(opts, "stack", 2)
+		:translate(0,-scroll)
+end
+
+-->8
+-- menu scene
+
+function menu_bounds(dims, menu_opts, sel)
+	local ymin,ymax = 0,0
+	local w,h = unpack(dims)
+	for i=1,sel do
+		local m = (i == 1 and 0 or 2)
+		local c = menu_opts[i]
+		local cx,cy,cw,ch = unpack(
+			measure_ui(c,{0,0,w,h})
+		)				
+		ymin = ymax + m
+		ymax = ymin + ch
+	end
+	return ymin, ymax
+end
+
+function menu_flow(opts, dims)	
+	return flow.create(function(nxt,done)	
+		local function make_menu(sel,scroll)
+			local menu_opts = opts
+				:map(function(opt,i)
+					return menu_option(opt,sel==i)
+				end)
+			
+			-- adjust scroll in case
+			-- selected element is
+			-- off screen
+			local w,h = unpack(dims)
+			local ymin, ymax = menu_bounds(
+				dims,
+				menu_opts,
+				sel
+			)
+			if scroll > ymin then
+				scroll = ymin
+			end
+			if scroll + h < ymax then
+				scroll = ymax - h
+			end
+			
+			return menu_list(menu_opts,scroll)
+				:updatable(function()					
 					if btnp(❎) then
-						done(curs:get().select())
+						done(opts[sel])
+					elseif btnp(⬆️) then
+						nxt(make_menu(
+							mid(1, sel-1, #opts),
+							scroll
+						))
+					elseif btnp(⬇️) then					
+						nxt(make_menu(
+							mid(1, sel+1, #opts),
+							scroll
+						))
 					end
 				end)
 		end
 		
-		nxt(make_ui(menu))
+		nxt(make_menu(1,0))
 	end)
 end
--->8
--- menu
 
-function menu_option(txt,cb)	
-	function make_opt(is_focused)
-		return ui_layout({
-			ui_spr(1)
-			:effect(
-				is_focused
-					and id
-					or  skip_draw
-			)
-			:translate(0,-2),
-			ui_wrap_text(txt, is_focused and 7 or 5)
-				:size(function(dims)
-					local w,h = unpack(dims)
-					return w - 12
-				end, function(dims)
-					local w,h = unpack(dims)
-					return text_height(wrap_lines(txt,w - 12))
-				end)
-		},"inline",4):inset(3)
-	end
-	
-	return cursor_single(
-		make_opt(false)
-		:focusable(
-			make_opt(true),
-			suspend(cb)(txt)
-		)
-		:focus()
-	)
-end
-
-function menu_list(opts)
-	local function make_stack(x,i)
-		local cs_focus = list_map(opts, function(c,j)
-			return i == j
-				and x
-				or  c:get():blur()
-		end)
-		local cs_blur = list_map(opts, function(c,j)
-			return c:get():blur()
-		end)
-		return menu_scroll(cs_blur, -1, 2)
-			:focusable(
-				menu_scroll(cs_focus, i, 2),
-				x.select
-			)
-	end
-
-	local curs = ix_array.create(opts)
-		:extend(function(c)			
-			return c:get()
-				:map(function(ui)
-					return make_stack(ui, c.ix):focus()
-				end)
-		end)
-	return fuse_cursor(curs)
-end
-
-
-function menu_scroll(opts, idx, m)
-	local layout = rdr(function(dims)
-		local w,h = unpack(dims)
-		local arr = {}
-		local scroll = 0
-		local dx,dy = 0,0
-		for i,c in pairs(opts) do
-			add(arr, c:translate(dx,dy))
-			local cw,ch = unpack(c.dims.run(dims))
-			
-			-- compute scroll value
-			if i == idx then
-				if dy+ch > h then
-					-- selected opt is too far
-					-- down on the list
-					scroll = h - (dy+ch)
-				end
-			end
-			-- increment offset
-			dx,dy = dx, dy+m+ch
-		end
-		return ui_group(arr)
-			:translate(0,scroll)
-	end)
-	
-	return ui.from_rdr(layout)
-end
--->8
--- menu scene
 function make_menu_scn(opts)
-	local mnu = menu_list(
-		opts
-			:map(function(opt)
-				return menu_option(opt, const(retort))
-			end)
-	)
-	:map(function(mnu)
-		return swordplay_ui(
-			ui_empty,
-			mnu,
-			{col="light"}
-		)
-	end)
-	
-	return menu_flow(mnu)
+	-- menu dimensions
+	local dims = {118,38}	
+	return menu_flow(opts, dims)
+		:wrap(function(mnu)
+			return swordplay_ui(
+				ui_empty,
+				mnu,
+				{col="light"}
+			)
+		end)
 end
 
 menu_scn = make_menu_scn(list.from_tbl({
