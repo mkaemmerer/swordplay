@@ -1321,7 +1321,7 @@ function menu_flow(opts, dims)
 			end
 			
 			return menu_list(menu_opts,scroll)
-				:updatable(function()					
+				:updatable(function()
 					if btnp(❎) then
 						done(opts[sel])
 					elseif btnp(⬆️) then
@@ -1329,7 +1329,7 @@ function menu_flow(opts, dims)
 							mid(1, sel-1, #opts),
 							scroll
 						))
-					elseif btnp(⬇️) then					
+					elseif btnp(⬇️) then
 						nxt(make_menu(
 							mid(1, sel+1, #opts),
 							scroll
