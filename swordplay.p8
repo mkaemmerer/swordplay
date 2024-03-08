@@ -553,21 +553,6 @@ function monochrome_palette(col)
 	return palette
 end
 
--- create a 1-bit palette that
--- sets masked bits to a solid
--- color
--- * b: the bitmask
--- * c: the color
-function palette_1bit(b,c)
-	local ret = {}
-	for i=0,15 do
-		ret[i] = (i & b == 0)
-			and 0
-			or  c
-	end
-	return ret
-end
-
 function draw_with_color(col)
 	return suspend(function(draw)
 		local c = peek(0x5f25)
@@ -585,9 +570,10 @@ function draw_with_layer(b)
 			or  1
 		bits = bits | (bit << i)
 	end
-	local p = monochrome_palette(7)
 	return suspend(function(draw)
 		palt(bits)
+		local c = peek(0x5f25)
+		local p = monochrome_palette(c)
 		draw_with_palette(p)(draw)()
 		palt()
 	end)
@@ -1125,6 +1111,14 @@ function behavior_await(poll)
 	end)
 end
 
+function behavior_frames(f)
+	return f <= 0
+		and behavior.success()
+		or  behavior.run(function()
+			return behavior_frames(f-1)
+		end)
+end
+
 -- input
 input_await_not❎ = behavior_await(function()
 	return not btn(❎)
@@ -1285,10 +1279,11 @@ menu_box = ui.from_draw(
 :effect(draw_with_layer(0b0001))
 
 menu_box_light = menu_box
+	:effect(draw_with_color(7))
 
 menu_box_dark = menu_box
-	:effect(draw_with_palette(monochrome_palette(5)))
-
+	:effect(draw_with_color(5))
+	
 battle_bar = ui.from_draw(
 	box9({
 		{32,35,37,40},
@@ -1296,6 +1291,7 @@ battle_bar = ui.from_draw(
 	})
 )
 :effect(draw_with_layer(0b0001))
+:effect(draw_with_color(7))
 
 function menu_panel(c, col)
 	return ui_group({
@@ -1316,6 +1312,7 @@ function progress_bar(fac)
 		:effect(
 			chain({
 				draw_with_layer(0b0001),
+				draw_with_color(7),
 				draw_with_outline_4(0),
 				draw_with_outline_4(5),
 			})
@@ -1440,6 +1437,7 @@ presented_by_scn = flow.once(function(nxt)
 			ui_group({
 				-- mabbees logo
 				ui_spr(128,4,4)
+				:effect(draw_with_color(7))
 				:align("center","center")
 			})
 			:size("fill","fit"),
@@ -1469,11 +1467,13 @@ title_scn = flow.once(function(nxt)
 	local ui = ui_group({	
 		ui_spr(168,8,2)
 		:align("center","center")
-		:translate(0,-16),
+		:translate(0,-16)
+		:effect(draw_with_color(7)),
 		
 		ui_spr(136,8,2)
 		:align("center","center")
-		:translate(0,16),
+		:translate(0,16)
+		:effect(draw_with_color(7)),
 		
 		ui_text("SwordPLAY",7)
 			:align("center","center")
@@ -1618,7 +1618,7 @@ function dialogue_flow(text,voice,state)
 			local top = c:effect(draw_with_outline_9(0))
 			local scn = ui_draw(
 				battle_frame(state.enemy, "idle")
-			)
+			):effect(draw_with_color(5))
 			local mnu = ui_empty
 			return swordplay_ui(
 				top,
@@ -1630,7 +1630,7 @@ function dialogue_flow(text,voice,state)
 				}
 			)
 		end)
-		:map(function() return text end)
+		:map(const(text))
 end
 
 
@@ -1670,7 +1670,9 @@ function victory_menu(state)
 	return menu_flow({"continue"})
 		:wrap(function(mnu)
 			local top = victory_screen
-			local scn = ui_draw(battle_frame(state.enemy, "victory"))
+			local scn = ui_draw(
+				battle_frame(state.enemy, "victory")
+			):effect(draw_with_color(5))
 			return swordplay_ui(
 				top,
 				scn,
@@ -1695,7 +1697,7 @@ function defeat_menu(state)
 			local top = defeat_screen
 			local scn = ui_draw(
 				battle_frame(state.enemy, "defeat")
-			)
+			):effect(draw_with_color(5))
 			return swordplay_ui(
 				top,
 				scn,
@@ -1712,11 +1714,11 @@ end
 function battle_menu(remark, retorts, state)
 	return menu_flow(retorts)
 		:wrap(function(mnu)
-			local top = ui_wrap_text(remark, 5)
+			local top = ui_wrap_text(remark, 7)
 				:effect(draw_with_outline_9(0))
 			local scn = ui_draw(
 				battle_frame(state.enemy, "idle")
-			)
+			):effect(draw_with_color(remark == "" and 7 or 5))
 			return swordplay_ui(
 				top,
 				scn,
@@ -1735,6 +1737,7 @@ end
 function menu_option(txt,is_focused)	
 	return ui_layout({
 		ui_spr(1)
+		:effect(draw_with_color(7))
 		:effect(
 			is_focused
 				and id
