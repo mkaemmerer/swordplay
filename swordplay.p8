@@ -8,6 +8,7 @@ __lua__
 --  battle system:
 --   - lose after 2 misses?
 --  ui:
+--   - better title screen
 --   - better hud?
 --   - show result summary
 --  sfx:
@@ -16,8 +17,6 @@ __lua__
 --   - battle loop
 --   - boss battle loop
 --   - victory/defeat tune
---  anim:
---   - battle animations
 
 -- sprite layers
 -- 1 : ui
@@ -1611,13 +1610,30 @@ function battle_intro_flow(text)
 	end)
 end
 
+function clash_flow(state,btl)
+	return anim_clash(state.enemy,btl)
+		:wrap(function(c)
+			local top = ui_empty
+			local scn = c
+			local mnu = ui_empty
+			return swordplay_ui(
+				top,
+				scn,
+				mnu,
+				{
+					col="dark",
+					fac=state.tide/state.max_tide,
+				}
+			)
+		end)
+end
 
-function dialogue_flow(text,voice,state)
+function dialogue_flow(text,voice,btl,state)
 	return say_text(text,voice)
 		:wrap(function(c)
 			local top = c:effect(draw_with_outline_9(0))
 			local scn = ui_draw(
-				battle_frame(state.enemy, "idle")
+				battle_frame(state.enemy, btl)
 			):effect(draw_with_color(5))
 			local mnu = ui_empty
 			return swordplay_ui(
@@ -1702,22 +1718,19 @@ function defeat_menu(state)
 				top,
 				scn,
 				mnu,
-				{
-					col="light",
-					fac=0,
-				}
+				{col="light",fac=0}
 			)
 		end)
 end
 
 
-function battle_menu(remark, retorts, state)
+function battle_menu(remark, retorts, btl, state)
 	return menu_flow(retorts)
 		:wrap(function(mnu)
 			local top = ui_wrap_text(remark, 7)
 				:effect(draw_with_outline_9(0))
 			local scn = ui_draw(
-				battle_frame(state.enemy, "idle")
+				battle_frame(state.enemy, btl)
 			):effect(draw_with_color(remark == "" and 7 or 5))
 			return swordplay_ui(
 				top,
@@ -2178,6 +2191,7 @@ player_adapter = {
 		return battle_menu(
 			"",
 			available_insults,
+			"attack",
 			state
 		)
 	end,
@@ -2188,9 +2202,11 @@ player_adapter = {
 		return battle_menu(
 			insult,
 			available_retorts,
+			"defend",
 			state
 		)
 	end,
+	dir = "attack",
 	voice = beep_speak(61,1/60),
 }
 
@@ -2212,6 +2228,7 @@ function enemy_adapter(enemy)
 				or  "ouch..."
 			return flow.of(retort)
 		end,
+		dir = "defend",
 		voice = enemy.voice,
 	}
 end
@@ -2227,6 +2244,7 @@ function captain_adapter(enemy)
 			-- captain doesn't need to retort
 			assert(false, "error")
 		end,
+		dir = "defend",
 		voice = enemy.voice,
 	}
 end
@@ -2236,12 +2254,12 @@ function battle_turn(state,attacker,defender,resolve)
 		:flatmap(function(insult)
 			local newstate = use_insult(insult)(state)
 		
-			return dialogue_flow(insult,attacker.voice,newstate)
+			return dialogue_flow(insult,attacker.voice,attacker.dir,newstate)
 				:flatmap(function()
 					return defender.get_retort(newstate,insult)
 				end)
 				:flatmap(function(retort)
-					return dialogue_flow(retort,defender.voice,newstate)
+					return dialogue_flow(retort,defender.voice,defender.dir,newstate)
 				end)
 				:map(function(retort)
 					return resolve(newstate,insult,retort)
@@ -2289,22 +2307,31 @@ function battle(state,enemy,turn)
 		return flow.of(state)
 	end
 
+	local do_clash = clash_flow(
+		state,
+		turn == "player"
+			and "attack"
+			or  "defend"
+	)
+
 	local do_turn = turn == "player"
 		and player_turn(state,enemy)
 		or  enemy_turn(state,enemy)
 	
-	return do_turn:flatmap(function(res)
-		local result,newstate = unpack(res)
-		local opponent = turn == "player"
-			and "enemy"
-			or  "player"
-		
-		if not result then
-			return flow.err(newstate)
-		end
-		
-		return battle(newstate,enemy,opponent)
-	end)
+	return do_clash
+		:flatmap(const(do_turn))
+		:flatmap(function(res)
+			local result,newstate = unpack(res)
+			local opponent = turn == "player"
+				and "enemy"
+				or  "player"
+			
+			if not result then
+				return flow.err(newstate)
+			end
+			
+			return battle(newstate,enemy,opponent)
+		end)
 end
 
 -- instead of trading insults
@@ -2560,6 +2587,7 @@ function anim_clash(enemy, btl)
 		or  "attack"
 	
 	return flow.seq({
+		anim_frame(15,battle_frame(enemy,"idle")),
 		-- flurry 1
 		anim_slash_2(atk),
 		anim_frame(2,noop),
@@ -2580,7 +2608,7 @@ function anim_clash(enemy, btl)
 		anim_slash_4(def),
 		anim_frame(4,noop),
 		anim_slash_1(atk),
-	}):wrap(ui_scn)
+	})
 end
 
 
