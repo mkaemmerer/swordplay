@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 41
+version 42
 __lua__
 --battle anims
 --by mabbees
@@ -7,8 +7,8 @@ __lua__
 -- sprite layers
 -- 1 : ui
 -- 2 : characters
--- 3 : battle animations
--- 4 : title
+-- 3 : title
+-- 4 : battle animations
 
 function _init()
 	t = 0
@@ -571,8 +571,10 @@ end
 
 skip_draw = const(noop)
 
-function draw_with_outline_4(col)
-	local palette = monochrome_palette(col)
+function draw_with_outline_4(col,b)
+	local palette = b != nil
+		and palette_1bit(b,col)
+		or  monochrome_palette(col)
 	
 	return suspend(function(draw)
 		draw_with_palette(palette)(
@@ -587,8 +589,10 @@ function draw_with_outline_4(col)
 	end)
 end
 
-function draw_with_outline_9(col)
-	local palette = monochrome_palette(col)
+function draw_with_outline_9(col,b)
+	local palette = b != nil
+		and palette_1bit(b,col)
+		or  monochrome_palette(col)
 	
 	return suspend(function(draw)
 		draw_with_palette(palette)(
@@ -1599,99 +1603,176 @@ end
 
 draw_spr = suspend(spr)
 
+function draw_char_spr(...)
+	local p = palette_1bit(2,7)
+	return draw_with_palette(p)
+		(draw_spr(...))
+end
+
 function sw_idle(x,y,flp)
-	return draw_spr(218,x,y,3,3,flp)
+	return draw_char_spr(218,x,y,3,3,flp)
 end
 
 function sw_block(x,y,flp)
-	-- todo: outlines that respect
+	-- use outlines that respect
 	-- palette layering
---	return draw_with_outline_9(0)
---		(draw_spr(221,x,y,3,3,flp))
-	return draw_spr(221,x,y,3,3,flp)
+	return draw_with_outline_9(0,2)
+		(draw_char_spr(221,x,y,3,3,flp))
 end
 
 function sw_attack(x,y,flp)
-	return draw_spr(10,x,y,4,2,flp)
+	return draw_char_spr(10,x,y,4,2,flp)
 end
 
 hero = {
 	idle = draw_seq({
-		draw_spr(0,0,0,3,4),
+		draw_char_spr(0,0,0,3,4),
 		sw_idle(18,0),
 	}),
 	block = draw_seq({
-		draw_spr(3,0,0,3,4),
+		draw_char_spr(3,0,0,3,4),
 		sw_block(1,-12),
 	}),
 	attack = draw_seq({
-		draw_spr(6,0,0,4,4),
+		draw_char_spr(6,0,0,4,4),
 		sw_attack(32,0),
 	}),
 }
 
 pirate_1 = {
 	idle = draw_seq({
-		draw_spr(64,0,0,3,4),
+		draw_char_spr(64,0,0,3,4),
 		sw_idle(-18,0,true),
 	}),
 	block = draw_seq({
-		draw_spr(67,0,0,3,4),
+		draw_char_spr(67,0,0,3,4),
 		sw_block(0,-12,true),
 	}),
 	attack = draw_seq({
-		draw_spr(70,0,0,4,4),
+		draw_char_spr(70,0,0,4,4),
 		sw_attack(-33,0,true),
 	}),
 }
 
 pirate_2 = {
 	idle = draw_seq({
-		draw_spr(128,0,0,3,4),
+		draw_char_spr(128,0,0,3,4),
 		sw_idle(-20,0,true),
 	}),
 	block = draw_seq({
-		draw_spr(131,0,0,4,4),
+		draw_char_spr(131,0,0,4,4),
 		sw_block(-1,-8,true),
 	}),
 	attack = draw_seq({
-		draw_spr(135,0,0,4,4),
+		draw_char_spr(135,0,0,4,4),
 		sw_attack(-33,0,true),
 	}),
 }
 
 pirate_3 = {
 	idle = draw_seq({
-		draw_spr(192,0,0,3,4),
+		draw_char_spr(192,0,0,3,4),
 		sw_idle(-18,0,true),
 	}),
 	block = draw_seq({
-		draw_spr(195,0,0,3,4),
+		draw_char_spr(195,0,0,3,4),
 		sw_block(-1,-8,true),
 	}),
 	attack = draw_seq({
-		draw_spr(198,0,0,4,4),
+		draw_char_spr(198,0,0,4,4),
 		sw_attack(-33,0,true),
 	}),
 }
 
 captain = {
 	idle = draw_seq({
-		draw_spr(77,0,0,3,4),
+		draw_char_spr(77,0,0,3,4),
 		sw_idle(-19,-3,true),
 	}),
 	block = draw_seq({
-		draw_spr(74,0,0,3,4),
+		draw_char_spr(74,0,0,3,4),
 		sw_block(-1,-11,true),
 	}),
 	attack = draw_seq({
-		draw_spr(139,0,0,4,4),
+		draw_char_spr(139,0,0,4,4),
 		sw_attack(-33,-1,true),
 	}),
 }
 
 -->8
 -- battle anims
+
+-- draw calls -----------------
+
+draw_btl_hero = chain({
+	draw_with_outline_9(0,2),
+	draw_with_offset(-32,-8)
+})
+
+draw_btl_enemy = chain({
+	draw_with_outline_9(0,2),
+	draw_with_offset(8,-8),
+})
+
+function draw_battle_idle(enemy)
+	-- hero on top layer
+	return draw_seq({
+		draw_btl_enemy(enemy.idle),
+		draw_btl_hero(hero.idle),
+	})
+end
+
+function draw_battle_attack(enemy)
+	-- hero on top layer
+	return draw_seq({
+		draw_btl_enemy(enemy.block),
+		draw_btl_hero(hero.attack),
+	})
+end
+
+function draw_battle_defend(enemy)
+	-- enemy on top layer
+	return draw_seq({
+		draw_btl_hero(hero.block),
+		draw_btl_enemy(enemy.attack),
+	})
+end
+
+-- flippable drawings
+
+function effect_frame(n,w,h)
+	local p = palette_1bit(4,7)
+	return function(flp_x)
+		return chain({
+			draw_with_palette(p),
+			draw_with_offset(-16,-16)
+		})(
+			draw_spr(n,0,0,w,h,flp_x)
+		)
+	end
+end
+
+function lift_effect(eff)
+	return function(draw)
+		return function(flp_x)
+			return eff(draw(flp_x))
+		end
+	end
+end
+
+slash_1 = effect_frame(64,4,4)
+slash_2 = effect_frame(68,4,4)
+slash_3 = lift_effect(draw_with_offset(0,-10))
+	(effect_frame(72,4,4))
+slash_4 = effect_frame(76,4,4)
+
+sparks_1 = effect_frame(128,4,4)
+sparks_2 = effect_frame(132,4,4)
+sparks_3 = effect_frame(136,4,4)
+sparks_4 = effect_frame(140,4,4)
+
+
+-- animation timing -----------
 function anim(draw,beh)
 	return flow.once(function(nxt)
 		local b = behavior.seq({
@@ -1699,12 +1780,10 @@ function anim(draw,beh)
 			behavior.once(nxt),
 			behavior.never,
 		})
-		return {
-			update=function(a,dt)
+		return ui_draw(draw)
+			:updatable(function(a,dt)
 				b = b.update(a,dt)
-			end,
-			draw=draw,
-		}
+			end)
 	end)
 end
 
@@ -1714,22 +1793,6 @@ function anim_frame(draw,f)
 		behavior_frames(f)
 	)
 end
-
-function spr_frame(n,w,h)
-	return function(flp_x)
-		return draw_spr(n,0,0,w,h,flp_x)
-	end
-end
-
-slash_1 = spr_frame(64,4,4)
-slash_2 = spr_frame(68,4,4)
-slash_3 = spr_frame(72,4,4)
-slash_4 = spr_frame(76,4,4)
-
-sparks_1 = spr_frame(128,4,4)
-sparks_2 = spr_frame(132,4,4)
-sparks_3 = spr_frame(136,4,4)
-sparks_4 = spr_frame(140,4,4)
 
 function anim_slash_1(flp_x)
 	local dx = flp_x and -1 or 1
@@ -1760,7 +1823,7 @@ function anim_slash_2(flp_x)
 	
 	return flow.seq({
 		-- slash
-		anim_frame(slash, 2),
+		anim_frame(slash,2),
 		-- slash + sparks
 		anim_frame(
 			draw_seq({slash,sparks}),
@@ -1812,37 +1875,35 @@ function anim_slash_4(flp_x)
 end
 
 
-anim_flow = flow.loop(
-	flow.seq({
-		anim_slash_1(false),
-		anim_frame(noop,20),
-		
-		anim_slash_2(true),
-		anim_frame(noop,20),
-		
-		anim_slash_1(true),
-		anim_frame(noop,20),
-		
-		anim_slash_2(false),
-		anim_frame(noop,20),
-		
-		anim_slash_3(true),
-		anim_frame(noop,20),
-		
-		anim_slash_4(true),
-		anim_frame(noop,20),
-	}):wrap(function(scn)
-		return {
-			update = scn.update,
-			draw = draw_with_offset(64,64)(scn.draw)
-		}
-	end)
-)
+anim_flow = flow.seq({	
+	anim_slash_2(true),
+	anim_frame(noop,4),
+	
+	anim_slash_1(true),
+	anim_frame(noop,4),
+	
+	anim_slash_2(false),
+	anim_frame(noop,4),
+	
+	anim_slash_3(true),
+	anim_frame(noop,4),
+	
+	anim_slash_4(true),
+	anim_frame(noop,4),
+
+	anim_slash_1(false),
+})
 -->8
 -- battle scene
 
+function ui_draw(draw)
+	return ui.from_draw(function(x,y,w,h)
+		draw_with_offset(x+w/2,y+h/2)
+			(draw)()
+	end)
+end
+
 function battle_scn(enemy, btl)
-	local p = palette_1bit(2,7)
 	local draw = skip_draw
 	
 	if btl == "idle" then
@@ -1854,40 +1915,9 @@ function battle_scn(enemy, btl)
 	end
 
 	return ui_scn(
-		ui.from_draw(function(x,y,w,h)
-			chain({
-				draw_with_offset(x+w/2,y+h/2),
-				draw_with_palette(p),
-			})
-			(draw)()
-		end)
+		ui_draw(draw)
 	)
 end
-
-function draw_battle_idle(enemy)
-	-- hero on top layer
-	return draw_seq({
-		draw_with_offset(8,-8)(enemy.idle),
-		draw_with_offset(-32,-8)(hero.idle),
-	})
-end
-
-function draw_battle_attack(enemy)
-	-- hero on top layer
-	return draw_seq({
-		draw_with_offset(8,-8)(enemy.block),
-		draw_with_offset(-32,-8)(hero.attack),
-	})
-end
-
-function draw_battle_defend(enemy)
-	-- enemy on top layer
-	return draw_seq({
-		draw_with_offset(-32,-8)(hero.block),
-		draw_with_offset(8,-8)(enemy.attack),
-	})
-end
-
 
 function btn_flow(scn)
 	return flow.once(function(nxt)
@@ -1912,6 +1942,7 @@ end
 function battle_flow(enemy)
 	return flow.seq({
 		btn_flow(battle_scn(enemy, "idle")),
+		anim_flow:wrap(ui_scn),
 		btn_flow(battle_scn(enemy, "attack")),
 		btn_flow(battle_scn(enemy, "defend")),
 	})
