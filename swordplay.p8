@@ -7,8 +7,6 @@ __lua__
 -- todos:
 --  battle system:
 --   - lose after 2 misses?
---  story:
---   - boss fight with innuendo
 --  ui:
 --   - better hud?
 --   - show result summary
@@ -19,7 +17,6 @@ __lua__
 --   - boss battle loop
 --   - victory/defeat tune
 --  anim:
---   - character sprites
 --   - battle animations
 
 -- sprite layers
@@ -580,6 +577,23 @@ function draw_with_color(col)
 	end)
 end
 
+function draw_with_layer(b)
+	local bits = 0
+	for i=0,15 do
+		local bit = (i & b == 0)
+			and 0
+			or  1
+		bits = bits | (bit << i)
+	end
+	local p = monochrome_palette(7)
+	return suspend(function(draw)
+		palt(bits)
+		draw_with_palette(p)(draw)()
+		palt()
+	end)
+end
+
+
 -- in case the draw call itself
 -- makes changes to palette
 -- we want the "outer" palette
@@ -845,17 +859,16 @@ function ui_wrap_text(str,c)
 	end):memo(hash_dims))
 end
 
-function ui_spr(n,sw,sh,b,col)
+function ui_spr(n,sw,sh,b)
 	sw = sw or 1
 	sh = sh or 1
-	b = b or 1
-	col = col or 7
+	b = b or 0b0001
 	local w=8*sw
 	local h=8*sh
 	return ui.from_draw(function(x,y,w,h)
 		spr(n,x,y,sw,sh)
 	end)
-	:effect(draw_with_palette(palette_1bit(b,col)))
+	:effect(draw_with_layer(b))
 	:size(w,h)
 end
 
@@ -1269,12 +1282,12 @@ menu_box = ui.from_draw(
 		{0,2,6,8}
 	})
 )
+:effect(draw_with_layer(0b0001))
 
 menu_box_light = menu_box
-	:effect(draw_with_palette(palette_1bit(1,7)))
 
 menu_box_dark = menu_box
-	:effect(draw_with_palette(palette_1bit(1,5)))
+	:effect(draw_with_palette(monochrome_palette(5)))
 
 battle_bar = ui.from_draw(
 	box9({
@@ -1282,7 +1295,7 @@ battle_bar = ui.from_draw(
 		{0,2,4,7}
 	})
 )
-:effect(draw_with_palette(palette_1bit(1,7)))
+:effect(draw_with_layer(0b0001))
 
 function menu_panel(c, col)
 	return ui_group({
@@ -1302,7 +1315,7 @@ function progress_bar(fac)
 		end)
 		:effect(
 			chain({
-				draw_with_palette(palette_1bit(1,7)),
+				draw_with_layer(0b0001),
 				draw_with_outline_4(0),
 				draw_with_outline_4(5),
 			})
@@ -1310,7 +1323,7 @@ function progress_bar(fac)
 	}):size("fill",6)
 end
 
-function swordplay_ui(top,mnu,opts)
+function swordplay_ui(top,scn,mnu,opts)
 	local opts = opts or { col="light", fac=0.5 }
 	local bar_height = 22
 	local menu_height = 48
@@ -1321,18 +1334,7 @@ function swordplay_ui(top,mnu,opts)
 				:inset(4),
 			-- top part
 			ui_group({
-				-- ★ add character sprite
-				ui.from_draw(function(x,y)
-					draw_with_offset(x,y)(
-						draw_seq({
-							draw_with_offset(-24,-24)(opts.player or skip_draw),
-							draw_with_offset(24,-24)(opts.enemy or skip_draw),
-						})
-					)()
-				end)
-				:effect(draw_with_palette(palette_1bit(2,7)))
-				:size("fit","fit")
-				:align("center","center"),
+				scn,
 				top:align("center","center")
 			})
 			:inset(4)
@@ -1405,6 +1407,16 @@ function flow_scn(flw)
 				scn:draw()
 			end,
 		})
+	end)
+end
+
+-- wrap a draw call as a ui
+-- component
+
+function ui_draw(draw)
+	return ui.from_draw(function(x,y,w,h)
+		draw_with_offset(x+w/2,y+h/2)
+			(draw)()
 	end)
 end
 
@@ -1576,7 +1588,6 @@ end
 -->8
 -- swordplay flows
 
-
 function battle_intro_flow(text)
 	return flow.once(function(nxt)
 		local b = behavior.seq({
@@ -1604,14 +1615,18 @@ end
 function dialogue_flow(text,voice,state)
 	return say_text(text,voice)
 		:wrap(function(c)
+			local top = c:effect(draw_with_outline_9(0))
+			local scn = ui_draw(
+				battle_frame(state.enemy, "idle")
+			)
+			local mnu = ui_empty
 			return swordplay_ui(
-				c:effect(draw_with_outline_9(0)),
-				ui_empty,
+				top,
+				scn,
+				mnu,
 				{
 					col="dark",
 					fac=state.tide/state.max_tide,
-					player=hero.idle,
-					enemy=state.enemy.idle,
 				}
 			)
 		end)
@@ -1645,7 +1660,7 @@ function say_text(text, beeps)
 end
 
 
-function victory_menu()
+function victory_menu(state)
 	local victory_screen = ui_group({
 		ui_text("victory", 7)
 			:align("center","center")
@@ -1655,8 +1670,10 @@ function victory_menu()
 	return menu_flow({"continue"})
 		:wrap(function(mnu)
 			local top = victory_screen
+			local scn = ui_draw(battle_frame(state.enemy, "victory"))
 			return swordplay_ui(
 				top,
+				scn,
 				mnu,
 				{col="light",fac=1}
 			)
@@ -1676,13 +1693,16 @@ function defeat_menu(state)
 	})
 		:wrap(function(mnu)
 			local top = defeat_screen
+			local scn = ui_draw(
+				battle_frame(state.enemy, "defeat")
+			)
 			return swordplay_ui(
 				top,
+				scn,
 				mnu,
 				{
 					col="light",
 					fac=0,
-					enemy=state.enemy.idle
 				}
 			)
 		end)
@@ -1694,14 +1714,16 @@ function battle_menu(remark, retorts, state)
 		:wrap(function(mnu)
 			local top = ui_wrap_text(remark, 5)
 				:effect(draw_with_outline_9(0))
+			local scn = ui_draw(
+				battle_frame(state.enemy, "idle")
+			)
 			return swordplay_ui(
 				top,
+				scn,
 				mnu,
 				{
 					col="light",
 					fac=state.tide/state.max_tide,
-					player=hero.idle,
-					enemy=state.enemy.idle,
 				}
 			)
 		end)
@@ -1993,30 +2015,37 @@ end
 -- enemy declarations
 draw_spr = suspend(spr)
 
+function draw_char_spr(...)
+	return draw_with_layer(0b0010)
+		(draw_spr(...))
+end
+
 function sw_idle(x,y,flp)
-	return draw_spr(218,x,y,3,3,flp)
+	return draw_char_spr(218,x,y,3,3,flp)
 end
 
 function sw_block(x,y,flp)
+	-- use outlines that respect
+	-- palette layering
 	return draw_with_outline_9(0)
-		(draw_spr(221,x,y,3,3,flp))
+		(draw_char_spr(221,x,y,3,3,flp))
 end
 
 function sw_attack(x,y,flp)
-	return draw_spr(10,x,y,4,2,flp)
+	return draw_char_spr(10,x,y,4,2,flp)
 end
 
 hero = {
 	idle = draw_seq({
-		draw_spr(0,0,0,3,4),
+		draw_char_spr(0,0,0,3,4),
 		sw_idle(18,0),
 	}),
 	block = draw_seq({
-		draw_spr(3,0,0,3,4),
+		draw_char_spr(3,0,0,3,4),
 		sw_block(1,-12),
 	}),
 	attack = draw_seq({
-		draw_spr(6,0,0,4,4),
+		draw_char_spr(6,0,0,4,4),
 		sw_attack(32,0),
 	}),
 }
@@ -2035,15 +2064,15 @@ pirate_1 = {
 	},
 	voice = beep_speak(60,2/60),
 	idle = draw_seq({
-		draw_spr(64,0,0,3,4),
+		draw_char_spr(64,0,0,3,4),
 		sw_idle(-18,0,true),
 	}),
 	block = draw_seq({
-		draw_spr(67,0,0,3,4),
+		draw_char_spr(67,0,0,3,4),
 		sw_block(0,-12,true),
 	}),
 	attack = draw_seq({
-		draw_spr(70,0,0,4,4),
+		draw_char_spr(70,0,0,4,4),
 		sw_attack(-33,0,true),
 	}),
 }
@@ -2062,15 +2091,15 @@ pirate_2 = {
 	},
 	voice = beep_speak(60,2/60),
 	idle = draw_seq({
-		draw_spr(128,0,0,3,4),
+		draw_char_spr(128,0,0,3,4),
 		sw_idle(-20,0,true),
 	}),
 	block = draw_seq({
-		draw_spr(131,0,0,4,4),
+		draw_char_spr(131,0,0,4,4),
 		sw_block(-1,-8,true),
 	}),
 	attack = draw_seq({
-		draw_spr(135,0,0,4,4),
+		draw_char_spr(135,0,0,4,4),
 		sw_attack(-33,0,true),
 	}),
 }
@@ -2089,15 +2118,15 @@ pirate_3 = {
 	},
 	voice = beep_speak(60,2/60),
 	idle = draw_seq({
-		draw_spr(192,0,0,3,4),
+		draw_char_spr(192,0,0,3,4),
 		sw_idle(-18,0,true),
 	}),
 	block = draw_seq({
-		draw_spr(195,0,0,3,4),
+		draw_char_spr(195,0,0,3,4),
 		sw_block(-1,-8,true),
 	}),
 	attack = draw_seq({
-		draw_spr(198,0,0,4,4),
+		draw_char_spr(198,0,0,4,4),
 		sw_attack(-33,0,true),
 	}),
 }
@@ -2113,18 +2142,20 @@ captain = {
 	},
 	voice = beep_speak(61,1/60),
 	idle = draw_seq({
-		draw_spr(77,0,0,3,4),
+		draw_char_spr(77,0,0,3,4),
 		sw_idle(-19,-3,true),
 	}),
 	block = draw_seq({
-		draw_spr(74,0,0,3,4),
+		draw_char_spr(74,0,0,3,4),
 		sw_block(-1,-11,true),
 	}),
 	attack = draw_seq({
-		draw_spr(139,0,0,4,4),
+		draw_char_spr(139,0,0,4,4),
 		sw_attack(-33,-1,true),
 	}),
 }
+
+
 -->8
 -- battle scene
 
@@ -2332,7 +2363,7 @@ function enemy_battle(enemy,i)
 			)
 		})
 		:flatmap(function(new_state)
-			return victory_menu()
+			return victory_menu(new_state)
 				:map(const(new_state))
 			end
 		)
@@ -2371,6 +2402,184 @@ end
 
 swordplay_scn = enemy_battles(start_battle_state)
 	:flatmap(final_battle)
+
+-->8
+-- battle anims
+
+-- draw calls -----------------
+
+draw_btl_hero = chain({
+	draw_with_outline_9(0),
+	draw_with_offset(-32,-8)
+})
+
+draw_btl_enemy = chain({
+	draw_with_outline_9(0),
+	draw_with_offset(8,-8),
+})
+
+function draw_battle_victory(enemy)
+	return draw_btl_hero(hero.idle)
+end
+
+function draw_battle_defeat(enemy)
+	return draw_btl_enemy(enemy.idle)
+end
+
+function draw_battle_idle(enemy)
+	-- hero on top layer
+	return draw_seq({
+		draw_btl_enemy(enemy.idle),
+		draw_btl_hero(hero.idle),
+	})
+end
+
+function draw_battle_attack(enemy)
+	-- hero on top layer
+	return draw_seq({
+		draw_btl_enemy(enemy.block),
+		draw_btl_hero(hero.attack),
+	})
+end
+
+function draw_battle_defend(enemy)
+	-- enemy on top layer
+	return draw_seq({
+		draw_btl_hero(hero.block),
+		draw_btl_enemy(enemy.attack),
+	})
+end
+
+function battle_frame(enemy, btl)
+	if btl == "idle" then
+		return draw_battle_idle(enemy)
+	elseif btl == "victory" then
+		return draw_battle_victory(enemy)
+	elseif btl == "defeat" then
+		return draw_battle_defeat(enemy)
+	elseif btl == "attack" then
+		return draw_battle_attack(enemy)
+	elseif btl == "defend" then
+		return draw_battle_defend(enemy)
+	end
+end
+
+-- flippable drawings
+
+function effect_frame(n,w,h)
+	return function(flp_x)
+		return chain({
+			draw_with_layer(0b0100),
+			draw_with_offset(-16,-16)
+		})(
+			draw_spr(n,0,0,w,h,flp_x)
+		)
+	end
+end
+
+function lift_effect(eff)
+	return function(draw)
+		return function(flp_x)
+			return eff(draw(flp_x))
+		end
+	end
+end
+
+slash_1 = effect_frame(64,4,4)
+slash_2 = effect_frame(68,4,4)
+slash_3 = lift_effect(draw_with_offset(0,-10))
+	(effect_frame(72,4,4))
+slash_4 = effect_frame(76,4,4)
+
+sparks_1 = effect_frame(128,4,4)
+sparks_2 = effect_frame(132,4,4)
+sparks_3 = effect_frame(136,4,4)
+sparks_4 = effect_frame(140,4,4)
+
+
+-- animation timing -----------
+function anim(draw,beh)
+	return flow.once(function(nxt)
+		local b = behavior.seq({
+			beh,
+			behavior.once(nxt),
+			behavior.never,
+		})
+		return ui_draw(draw)
+			:updatable(function(a,dt)
+				b = b.update(a,dt)
+			end)
+	end)
+end
+
+function anim_frame(f,draw)
+	return anim(
+		draw,
+		behavior_frames(f)
+	)
+end
+
+function anim_slash(slash,sparks)
+	return function(dir)
+		local flp_x = dir != "attack"
+		local dx = flp_x and -1 or 1
+		
+		local slash  = slash(flp_x)
+		local sparks = chain({
+			draw_with_offset(12*dx,0),
+			draw_with_outline_9(0),
+		})(sparks(flp_x))
+		local both = draw_seq({
+			draw_with_palette(monochrome_palette(5))
+				(slash),
+			sparks,
+		})
+		
+		return flow.seq({
+			anim_frame(2,slash),
+			anim_frame(1,both),
+			anim_frame(1,sparks),
+		})
+	end
+end
+
+anim_slash_1 = anim_slash(slash_1, sparks_1)
+anim_slash_2 = anim_slash(slash_2, sparks_2)
+anim_slash_3 = anim_slash(slash_3, sparks_3)
+anim_slash_4 = anim_slash(slash_4, sparks_4)
+
+-- battle anims ---------------
+
+function anim_clash(enemy, btl)
+	local atk = btl
+	local def = btl == "attack"
+		and "defend"
+		or  "attack"
+	
+	return flow.seq({
+		-- flurry 1
+		anim_slash_2(atk),
+		anim_frame(2,noop),
+		anim_slash_3(def),
+		anim_frame(2,noop),
+		anim_slash_2(atk),
+		anim_frame(1,noop),
+		-- hold
+		anim_frame(4,battle_frame(enemy,atk)),
+		-- flurry 2
+		anim_slash_1(atk),
+		anim_frame(2,noop),
+		anim_slash_2(def),
+		anim_frame(1,noop),
+		-- hold
+		anim_frame(4,battle_frame(enemy,def)),
+		-- flurry 3
+		anim_slash_4(def),
+		anim_frame(4,noop),
+		anim_slash_1(atk),
+	}):wrap(ui_scn)
+end
+
 
 __gfx__
 00000000000004405411110100000000011331100001000000000000000000000000000000000000000000000000000000000000000000000000000000000000

@@ -7,8 +7,8 @@ __lua__
 -- sprite layers
 -- 1 : ui
 -- 2 : characters
--- 3 : title
--- 4 : battle animations
+-- 3 : battle animations
+-- 4 : title
 
 function _init()
 	t = 0
@@ -1147,230 +1147,6 @@ input_await_❎🅾️ = behavior.par({
 })
 
 
--- grids ----------------------
-
-function diamond_grid(size,rows,cols)
-	local s = size*sqrt(2)
-	local dx = s
-	local dy = s/2
-	
-	return pair(
-		list.from_range(1,cols),
-		list.from_range(1,rows)
-	)
-	:map(function(tbl)
-		local i,j = unpack(tbl)
-		return {
-			(i-1)*dx + (j%2)*0.5*dx,
-			(j-0.5)*dy,
-			i,
-			j,
-		}
-	end)
-end
-
--- dot fields -----------------
-
-dots = {}
-
--- dot transforms
-
-function dots.transform(f)
-	return function(dots)
-		return compose(f,dots)
-	end
-end
-
-function dots.map(f)
-	return function(dots)
-		return compose(dots,f)
-	end
-end
-
-function dots.translate(dx,dy)
-	return dots.transform(function(t,x,y)
-		return t,x-dx,y-dy
-	end)
-end
-
-function dots.scale(sx,sy)
-	sy = sy or sx
-	return dots.transform(function(t,x,y)
-		local xx = x/sx
-		local yy = y/sy
-		return t,xx,yy
-	end)
-end
-
-function dots.ease(f)
-	return dots.transform(function(t,x,y)
-		return f(t),x,y
-	end)
-end
-
-function draw_dots(grid,field)
-	return function(t)
-		foreach(grid, function(p)
-			local x,y = unpack(p)
-			local r = field(t,x,y)
-			circfill(x,y,r)
-		end)
-	end
-end
-
--- transitions ----------------
-
-scale_to_grid = chain({
-	dots.translate(0.5,0.5),
-	dots.scale(128),
-	dots.map(function(v)
-		return 16 * min(v,1)
-	end),
-})
-
-wipe_left = chain({
-	dots.ease(function(t)
-		return (t*3.5)-1.25
-	end),
-	dots.map(function(r)
-		return 0.6 * r
-	end)
-})(function(t,x,y)
-	return t+2*x+y
-end)
-
-
--- ui -------------------------
-
-function box9(coords)
-	local xs,ys = unpack(coords)
-	local sx0,sx1,sx2,sx3 = unpack(xs)
-	local sy0,sy1,sy2,sy3 = unpack(ys)
-	
-	return function(x,y,w,h)
-		local sw0,sw1,sw2 = sx1-sx0, sx2-sx1, sx3-sx2
-		local sh0,sh1,sh2 = sy1-sy0, sy2-sy1, sy3-sy2
-		local dx0,dx1,dx2,dx3 = x,x+sw0,x+w-sw2,x+w
-		local dy0,dy1,dy2,dy3 = y,y+sh0,y+h-sh2,y+h
-		local dw0,dw1,dw2 = dx1-dx0,dx2-dx1,dx3-dx2
-		local dh0,dh1,dh2 = dy1-dy0,dy2-dy1,dy3-dy2
-		
-		sspr(sx0, sy0, sw0, sh0, dx0, dy0, dw0, dh0)
-		sspr(sx1, sy0, sw1, sh0, dx1, dy0, dw1, dh0)
-		sspr(sx2, sy0, sw2, sh0, dx2, dy0, dw2, dh0)
-		sspr(sx0, sy1, sw0, sh1, dx0, dy1, dw0, dh1)
-		sspr(sx1, sy1, sw1, sh1, dx1, dy1, dw1, dh1)
-		sspr(sx2, sy1, sw2, sh1, dx2, dy1, dw2, dh1)
-		sspr(sx0, sy2, sw0, sh2, dx0, dy2, dw0, dh2)
-		sspr(sx1, sy2, sw1, sh2, dx1, dy2, dw1, dh2)
-		sspr(sx2, sy2, sw2, sh2, dx2, dy2, dw2, dh2)
-	end
-end
-
-menu_box = ui.from_draw(
-	box9({
-		{16,18,22,24},
-		{0,2,6,8}
-	})
-)
-
-menu_box_light = menu_box
-	:effect(draw_with_palette(palette_1bit(1,7)))
-
-menu_box_dark = menu_box
-	:effect(draw_with_palette(palette_1bit(1,5)))
-
-battle_bar = ui.from_draw(
-	box9({
-		{32,35,37,40},
-		{0,2,4,7}
-	})
-)
-:effect(draw_with_palette(palette_1bit(1,7)))
-
-function menu_panel(c, col)
-	return ui_group({
-		col == "dark"
-			and menu_box_dark
-			or  menu_box_light,
-		ui_clip(c):inset(1),
-	})
-end
-
-function progress_bar(fac)
-	return ui_group({
-		battle_bar,
-		ui.from_draw(function(x,y,w,h)
-			local xx = x + w * fac
-			spr(5,xx-4,y-2)
-		end)
-		:effect(
-			chain({
-				draw_with_palette(palette_1bit(1,7)),
-				draw_with_outline_4(0),
-				draw_with_outline_4(5),
-			})
-		)
-	}):size("fill",6)
-end
-
-function swordplay_ui(top,mnu,opts)
-	local opts = opts or { col="light", fac=0.5 }
-	local bar_height = 22
-	local menu_height = 48
-
-	return ui_layout({
-			-- progress bar
-			progress_bar(opts.fac or 0.5)
-				:inset(4),
-			-- top part
-			ui_group({
-				-- ★ add character sprite
-				ui.from_draw(function(x,y)
-					draw_with_offset(x,y)(
-						draw_seq({
-							draw_with_offset(-24,-24)(opts.player or skip_draw),
-							draw_with_offset(24,-24)(opts.enemy or skip_draw),
-						})
-					)()
-				end)
-				:effect(draw_with_palette(palette_1bit(2,7)))
-				:size("fit","fit")
-				:align("center","center"),
-				top:align("center","center")
-			})
-			:inset(4)
-			:size("fill", 128 - menu_height - bar_height),
-			-- menu part
-			menu_panel(mnu, opts.col or "light")
-				:inset(1)
-				:size("fill", menu_height),
-		}, "stack")
-		:size("fill","fill")
-		:selectable(mnu.select)
-end
-
-function text_reveal(str,col,len)
-	return ui.from_rdr(rdr(function(dims)
-		local w,h = unpack(dims)
-		local txt = wrap_lines(str,w)
-		local dims = rdr(const({
-			text_width(txt),
-			text_height(txt)-1
-		}))
-		return ui.create({
-			offset   = no_offset,
-			min_dims = dims,
-			dims     = dims,
-			draw=function(c,bnds)
-				local show_str = sub(txt,0,len())
-				local x,y=unpack(bnds)
-				print(show_str,x,y,col)
-			end
-		})
-	end):memo(hash_dims))
-end
-
 -- scenes & flow --------------
 
 -- wrap text reveal into a flow
@@ -1441,7 +1217,7 @@ end
 draw_spr = suspend(spr)
 
 function draw_char_spr(...)
-	return draw_with_layer(2)
+	return draw_with_layer(0b0010)
 		(draw_spr(...))
 end
 
@@ -1550,6 +1326,14 @@ draw_btl_enemy = chain({
 	draw_with_offset(8,-8),
 })
 
+function draw_battle_victory(enemy)
+	return draw_btl_hero(hero.idle)
+end
+
+function draw_battle_defeat(enemy)
+	return draw_btl_enemy(enemy.idle)
+end
+
 function draw_battle_idle(enemy)
 	-- hero on top layer
 	return draw_seq({
@@ -1574,12 +1358,26 @@ function draw_battle_defend(enemy)
 	})
 end
 
+function battle_frame(enemy, btl)
+	if btl == "idle" then
+		return draw_battle_idle(enemy)
+	elseif btl == "victory" then
+		return draw_battle_victory(enemy)
+	elseif btl == "defeat" then
+		return draw_battle_defeat(enemy)
+	elseif btl == "attack" then
+		return draw_battle_attack(enemy)
+	elseif btl == "defend" then
+		return draw_battle_defend(enemy)
+	end
+end
+
 -- flippable drawings
 
 function effect_frame(n,w,h)
 	return function(flp_x)
 		return chain({
-			draw_with_layer(4),
+			draw_with_layer(0b0100),
 			draw_with_offset(-16,-16)
 		})(
 			draw_spr(n,0,0,w,h,flp_x)
@@ -1658,18 +1456,7 @@ anim_slash_2 = anim_slash(slash_2, sparks_2)
 anim_slash_3 = anim_slash(slash_3, sparks_3)
 anim_slash_4 = anim_slash(slash_4, sparks_4)
 
--->8
--- battle scene
-
-function battle_frame(enemy, btl)
-	if btl == "idle" then
-		return draw_battle_idle(enemy)
-	elseif btl == "attack" then
-		return draw_battle_attack(enemy)
-	elseif btl == "defend" then
-		return draw_battle_defend(enemy)
-	end
-end
+-- battle anims ---------------
 
 function anim_clash(enemy, btl)
 	local atk = btl
@@ -1680,26 +1467,29 @@ function anim_clash(enemy, btl)
 	return flow.seq({
 		-- flurry 1
 		anim_slash_2(atk),
-		anim_frame(2,skip_draw),
+		anim_frame(2,noop),
 		anim_slash_3(def),
-		anim_frame(2,skip_draw),
+		anim_frame(2,noop),
 		anim_slash_2(atk),
-		anim_frame(1,skip_draw),
+		anim_frame(1,noop),
 		-- hold
 		anim_frame(4,battle_frame(enemy,atk)),
 		-- flurry 2
 		anim_slash_1(atk),
-		anim_frame(2,skip_draw),
+		anim_frame(2,noop),
 		anim_slash_2(def),
-		anim_frame(1,skip_draw),
+		anim_frame(1,noop),
 		-- hold
 		anim_frame(4,battle_frame(enemy,def)),
 		-- flurry 3
 		anim_slash_4(def),
-		anim_frame(4,skip_draw),
+		anim_frame(4,noop),
 		anim_slash_1(atk),
 	}):wrap(ui_scn)
 end
+
+-->8
+-- battle scene
 
 function btn_flow(scn)
 	return flow.once(function(nxt)
