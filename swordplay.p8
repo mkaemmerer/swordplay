@@ -1319,8 +1319,7 @@ function progress_bar(fac)
 	}):size("fill",6)
 end
 
-function swordplay_ui(top,scn,mnu,opts)
-	local opts = opts or { col="light", fac=0.5 }
+function swordplay_ui(opts)
 	local bar_height = 22
 	local menu_height = 48
 
@@ -1330,13 +1329,13 @@ function swordplay_ui(top,scn,mnu,opts)
 				:inset(4),
 			-- top part
 			ui_group({
-				scn,
-				top:align("center","center")
+				opts.scn,
+				opts.top:align("center","center")
 			})
 			:inset(4)
 			:size("fill", 128 - menu_height - bar_height),
 			-- menu part
-			menu_panel(mnu, opts.col or "light")
+			menu_panel(opts.mnu, opts.mnu == ui_empty and "dark" or "light")
 				:inset(1)
 				:size("fill", menu_height),
 		}, "stack")
@@ -1613,38 +1612,26 @@ end
 function clash_flow(state,btl)
 	return anim_clash(state.enemy,btl)
 		:wrap(function(c)
-			local top = ui_empty
-			local scn = c
-			local mnu = ui_empty
-			return swordplay_ui(
-				top,
-				scn,
-				mnu,
-				{
-					col="dark",
-					fac=state.tide/state.max_tide,
-				}
-			)
+			return swordplay_ui({
+				top = ui_empty,
+				scn = c,
+				mnu = ui_empty,
+				fac=state.tide/state.max_tide,
+			})
 		end)
 end
 
 function dialogue_flow(text,voice,btl,state)
 	return say_text(text,voice)
 		:wrap(function(c)
-			local top = c:effect(draw_with_outline_9(0))
-			local scn = ui_draw(
-				battle_frame(state.enemy, btl)
-			):effect(draw_with_color(5))
-			local mnu = ui_empty
-			return swordplay_ui(
-				top,
-				scn,
-				mnu,
-				{
-					col="dark",
-					fac=state.tide/state.max_tide,
-				}
-			)
+			return swordplay_ui({
+				top = c:effect(draw_with_outline_9(0)),
+				scn = ui_draw(
+					battle_frame(state.enemy, btl)
+				):effect(draw_with_color(5)),
+				mnu = ui_empty,
+				fac=state.tide/state.max_tide,
+			})
 		end)
 		:map(const(text))
 end
@@ -1685,16 +1672,14 @@ function victory_menu(state)
 	
 	return menu_flow({"continue"})
 		:wrap(function(mnu)
-			local top = victory_screen
-			local scn = ui_draw(
-				battle_frame(state.enemy, "victory")
-			):effect(draw_with_color(5))
-			return swordplay_ui(
-				top,
-				scn,
-				mnu,
-				{col="light",fac=1}
-			)
+			return swordplay_ui({
+				top = victory_screen,
+				scn = ui_draw(
+					battle_frame(state.enemy, "victory")
+				):effect(draw_with_color(5)),
+				mnu=mnu,
+				fac=1,
+			})
 		end)
 end
 
@@ -1710,16 +1695,14 @@ function defeat_menu(state)
 		"give up",
 	})
 		:wrap(function(mnu)
-			local top = defeat_screen
-			local scn = ui_draw(
-				battle_frame(state.enemy, "defeat")
-			):effect(draw_with_color(5))
-			return swordplay_ui(
-				top,
-				scn,
-				mnu,
-				{col="light",fac=0}
-			)
+			return swordplay_ui({
+				top = defeat_screen,
+				scn = ui_draw(
+					battle_frame(state.enemy, "defeat")
+				):effect(draw_with_color(5)),
+				mnu = mnu,
+				fac=0,
+			})
 		end)
 end
 
@@ -1727,20 +1710,15 @@ end
 function battle_menu(remark, retorts, btl, state)
 	return menu_flow(retorts)
 		:wrap(function(mnu)
-			local top = ui_wrap_text(remark, 7)
-				:effect(draw_with_outline_9(0))
-			local scn = ui_draw(
-				battle_frame(state.enemy, btl)
-			):effect(draw_with_color(remark == "" and 7 or 5))
-			return swordplay_ui(
-				top,
-				scn,
-				mnu,
-				{
-					col="light",
-					fac=state.tide/state.max_tide,
-				}
-			)
+			return swordplay_ui({
+				top = ui_wrap_text(remark, 7)
+					:effect(draw_with_outline_9(0)),
+				scn = ui_draw(
+					battle_frame(state.enemy, btl)
+				):effect(draw_with_color(remark == "" and 7 or 5)),
+				mnu = mnu,
+				fac = state.tide/state.max_tide,
+			})
 		end)
 end
 
