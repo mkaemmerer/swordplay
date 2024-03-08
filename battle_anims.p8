@@ -540,6 +540,22 @@ function draw_with_color(col)
 	end)
 end
 
+function draw_with_layer(b)
+	local bits = 0
+	for i=0,15 do
+		local bit = (i & b == 0)
+			and 0
+			or  1
+		bits = bits | (bit << i)
+	end
+	local p = monochrome_palette(7)
+	return suspend(function(draw)
+		palt(bits)
+		draw_with_palette(p)(draw)()
+		palt()
+	end)
+end
+
 -- in case the draw call itself
 -- makes changes to palette
 -- we want the "outer" palette
@@ -571,10 +587,8 @@ end
 
 skip_draw = const(noop)
 
-function draw_with_outline_4(col,b)
-	local palette = b != nil
-		and palette_1bit(b,col)
-		or  monochrome_palette(col)
+function draw_with_outline_4(col)
+	local palette = monochrome_palette(col)
 	
 	return suspend(function(draw)
 		draw_with_palette(palette)(
@@ -589,10 +603,8 @@ function draw_with_outline_4(col,b)
 	end)
 end
 
-function draw_with_outline_9(col,b)
-	local palette = b != nil
-		and palette_1bit(b,col)
-		or  monochrome_palette(col)
+function draw_with_outline_9(col)
+	local palette = monochrome_palette(col)
 	
 	return suspend(function(draw)
 		draw_with_palette(palette)(
@@ -1228,170 +1240,6 @@ wipe_left = chain({
 end)
 
 
--- cursors --------------------
-
-ix_array = {}
-
--- shuffle a list in place
-function shuffle(xs)
-	for i = #xs, 2, -1 do
-		local j = flr(rnd(i)) + 1
-		xs[i], xs[j] = xs[j], xs[i]
-	end
-	return xs
-end
-
-ix_array_meta = {
-	__index= {
-		-- comonad
-		map = function(c,f)
-			return ix_array.create(
-				list_map(c.tbl,f),
-				c.ix
-			)
-		end,
-		extend = function(c,f)
-			return ix_array.create(
-				list_map(c.tbl, function(_,i)
-					return f(ix_array.create(c.tbl, i))
-				end),
-				c.ix
-			)
-		end,
-		-- cursor
-		get = function(c)
-			return c.tbl[c.ix]
-		end,
-		set = function(c,x)
-			local cpy = list_copy(c.tbl)
-			cpy[c.ix] = x
-			return ix_array.create(
-				cpy,
-				c.ix
-			)
-		end,
-		hasprev = function(c)
-			return c.ix > 1
-		end,
-		prev = function(c)
-			return c:hasprev()
-				and ix_array.create(c.tbl, c.ix-1)
-				or  nil
-		end,
-		first = function(c)
-			return ix_array.create(c.tbl, 1)
-		end,
-		hasnext = function(c)
-			return c.ix < #c.tbl
-		end,
-		next = function(c)
-			return c:hasnext()
-				and ix_array.create(c.tbl, c.ix+1)
-				or  nil
-		end,
-		last = function(c)
-			return ix_array.create(c.tbl, #c.tbl)
-		end,
-	}
-}
-
-function ix_array.create(tbl,ix)
-	return setmetatable({
-		tbl=tbl,
-		ix=ix or 1,
-	}, ix_array_meta)
-end
-
--- map cursors
-
-function map_cursor(c,f)
-	return {
-		get = function(_)
-			return f(c:get())
-		end,
-		set = function(_,x)
-			return map_cursor(c:set(x), f)
-		end,
-		hasprev = function(_)
-			return c:hasprev()
-		end,
-		prev = function(_)
-			return c:hasprev()
-				and map_cursor(c:prev(), f)
-				or  nil
-		end,
-		first = function(_)
-			return map_cursor(c:first(), f)
-		end,
-		hasnext = function(_)
-			return c:hasnext()
-		end,
-		next = function(_)
-			return c:hasnext()
-				and map_cursor(c:next(), f)
-				or  nil
-		end,
-		last = function(_)
-			return map_cursor(c:last(), f)
-		end,
-		map = function(_,g)
-			return map_cursor(c, compose(f,g))
-		end,
-	}
-end
-
--- fuse cursors
-
-function fuse_over(cc,f)
-	return fuse_cursor(
-		cc:set(f(cc:get()))
-	)
-end
-
-function fuse_cursor(cc)
-	return {
-		get = function(_)
-			return cc:get():get()
-		end,
-		set = function(_,x)
-			return fuse_over(cc, call("set",x))
-		end,
-		hasprev = function(_)
-			return cc:get():hasprev() or cc:hasprev()
-		end,
-		prev = function(_)
-			return cc:get():hasprev()
-				and fuse_over(cc, call("prev"))
-				or  cc:hasprev()
-					and fuse_over(cc:prev(), call("last"))
-					or  nil
-		end,
-		first = function(_)
-			return fuse_over(cc:first(), call("first"))
-		end,
-		hasnext = function(_)
-			return cc:get():hasnext() or cc:hasnext()
-		end,
-		next = function(_)
-			return cc:get():hasnext()
-				and fuse_over(cc, call("next"))
-				or  cc:hasnext()
-					and fuse_over(cc:next(), call("first"))
-					or  nil
-		end,
-		last = function(_)
-			return fuse_over(cc:last(), call("last"))
-		end,
-		map = function(x, f)
-			return map_cursor(x, f)
-		end,
-	}
-end
-
-function cursor_single(x)
-	return ix_array.create({x})
-end
-
 -- ui -------------------------
 
 function box9(coords)
@@ -1565,6 +1413,16 @@ function flow_scn(flw)
 	end)
 end
 
+-- wrap a draw call as a ui
+-- component
+
+function ui_draw(draw)
+	return ui.from_draw(function(x,y,w,h)
+		draw_with_offset(x+w/2,y+h/2)
+			(draw)()
+	end)
+end
+
 -- wrap a ui component as a scn
 function ui_scn(c)
 	return {
@@ -1577,35 +1435,13 @@ function ui_scn(c)
 	}
 end
 
--- wrap a cursor as a flow
-function menu_flow(menu)	
-	return flow.create(function(nxt,done)
-		local function make_ui(curs)
-			return curs:get()
-				:updatable(function(scn,dt)
-					if btnp(⬆️) and curs:hasprev() then
-						nxt(make_ui(curs:prev()))
-					end
-					if btnp(⬇️) and curs:hasnext() then
-						nxt(make_ui(curs:next()))
-					end
-					if btnp(❎) then
-						done(curs:get().select())
-					end
-				end)
-		end
-		
-		nxt(make_ui(menu))
-	end)
-end
 -->8
 -- pirates
 
 draw_spr = suspend(spr)
 
 function draw_char_spr(...)
-	local p = palette_1bit(2,7)
-	return draw_with_palette(p)
+	return draw_with_layer(2)
 		(draw_spr(...))
 end
 
@@ -1616,7 +1452,7 @@ end
 function sw_block(x,y,flp)
 	-- use outlines that respect
 	-- palette layering
-	return draw_with_outline_9(0,2)
+	return draw_with_outline_9(0)
 		(draw_char_spr(221,x,y,3,3,flp))
 end
 
@@ -1705,12 +1541,12 @@ captain = {
 -- draw calls -----------------
 
 draw_btl_hero = chain({
-	draw_with_outline_9(0,2),
+	draw_with_outline_9(0),
 	draw_with_offset(-32,-8)
 })
 
 draw_btl_enemy = chain({
-	draw_with_outline_9(0,2),
+	draw_with_outline_9(0),
 	draw_with_offset(8,-8),
 })
 
@@ -1741,10 +1577,9 @@ end
 -- flippable drawings
 
 function effect_frame(n,w,h)
-	local p = palette_1bit(4,7)
 	return function(flp_x)
 		return chain({
-			draw_with_palette(p),
+			draw_with_layer(4),
 			draw_with_offset(-16,-16)
 		})(
 			draw_spr(n,0,0,w,h,flp_x)
@@ -1794,86 +1629,37 @@ function anim_frame(draw,f)
 	)
 end
 
-function anim_slash_1(flp_x)
-	local dx = flp_x and -1 or 1
-	local slash  = slash_1(flp_x)
-	local sparks =
-		draw_with_offset(12*dx,0)
-			(sparks_1(flp_x))
-	
-	return flow.seq({
-		-- slash
-		anim_frame(slash, 2),
-		-- slash + sparks
-		anim_frame(
-			draw_seq({slash,sparks}),
-			1
-		),
-		-- sparks
-		anim_frame(sparks,1),
-	})
+function anim_slash(slash,sparks)
+	return function(flp_x)
+		local dx = flp_x and -1 or 1
+		local slash  = slash(flp_x)
+		local sparks = chain({
+			draw_with_offset(12*dx,0),
+			draw_with_outline_9(0),
+		})(sparks(flp_x))
+		
+		return flow.seq({
+			-- slash
+			anim_frame(slash, 2),
+			-- slash + sparks
+			anim_frame(
+				draw_seq({
+					draw_with_palette(monochrome_palette(5))
+						(slash),
+					sparks,
+				}),
+				1
+			),
+			-- sparks
+			anim_frame(sparks,1),
+		})
+	end
 end
 
-function anim_slash_2(flp_x)
-	local dx = flp_x and -1 or 1
-	local slash  = slash_2(flp_x)
-	local sparks =
-		draw_with_offset(12*dx,0)
-			(sparks_2(flp_x))
-	
-	return flow.seq({
-		-- slash
-		anim_frame(slash,2),
-		-- slash + sparks
-		anim_frame(
-			draw_seq({slash,sparks}),
-			1
-		),
-		-- sparks
-		anim_frame(sparks,1),
-	})
-end
-
-function anim_slash_3(flp_x)
-	local dx = flp_x and -1 or 1
-	local slash  = slash_3(flp_x)
-	local sparks =
-		draw_with_offset(12*dx,0)
-			(sparks_3(not flp_x))
-	
-	return flow.seq({
-		-- slash
-		anim_frame(slash, 2),
-		-- slash + sparks
-		anim_frame(
-			draw_seq({slash,sparks}),
-			1
-		),
-		-- sparks
-		anim_frame(sparks,1),
-	})
-end
-
-function anim_slash_4(flp_x)
-	local dx = flp_x and -1 or 1
-	local slash  = slash_4(flp_x)
-	local sparks =
-		draw_with_offset(12*dx,0)
-			(sparks_4(not flp_x))
-	
-	return flow.seq({
-		-- slash
-		anim_frame(slash, 2),
-		-- slash + sparks
-		anim_frame(
-			draw_seq({slash,sparks}),
-			1
-		),
-		-- sparks
-		anim_frame(sparks,1),
-	})
-end
-
+anim_slash_1 = anim_slash(slash_1, sparks_1)
+anim_slash_2 = anim_slash(slash_2, sparks_2)
+anim_slash_3 = anim_slash(slash_3, sparks_3)
+anim_slash_4 = anim_slash(slash_4, sparks_4)
 
 anim_flow = flow.seq({	
 	anim_slash_2(true),
@@ -1895,13 +1681,6 @@ anim_flow = flow.seq({
 })
 -->8
 -- battle scene
-
-function ui_draw(draw)
-	return ui.from_draw(function(x,y,w,h)
-		draw_with_offset(x+w/2,y+h/2)
-			(draw)()
-	end)
-end
 
 function battle_scn(enemy, btl)
 	local draw = skip_draw
