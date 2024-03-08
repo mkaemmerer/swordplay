@@ -49,7 +49,7 @@ end
 
 
 -- functions
-function id(d) return d end
+function id(...) return ... end
 
 function const(x)
 	return function() return x end
@@ -1622,7 +1622,7 @@ function anim(draw,beh)
 	end)
 end
 
-function anim_frame(draw,f)
+function anim_frame(f,draw)
 	return anim(
 		draw,
 		behavior_frames(f)
@@ -1630,28 +1630,25 @@ function anim_frame(draw,f)
 end
 
 function anim_slash(slash,sparks)
-	return function(flp_x)
+	return function(dir)
+		local flp_x = dir != "attack"
 		local dx = flp_x and -1 or 1
+		
 		local slash  = slash(flp_x)
 		local sparks = chain({
 			draw_with_offset(12*dx,0),
 			draw_with_outline_9(0),
 		})(sparks(flp_x))
+		local both = draw_seq({
+			draw_with_palette(monochrome_palette(5))
+				(slash),
+			sparks,
+		})
 		
 		return flow.seq({
-			-- slash
-			anim_frame(slash, 2),
-			-- slash + sparks
-			anim_frame(
-				draw_seq({
-					draw_with_palette(monochrome_palette(5))
-						(slash),
-					sparks,
-				}),
-				1
-			),
-			-- sparks
-			anim_frame(sparks,1),
+			anim_frame(2,slash),
+			anim_frame(1,both),
+			anim_frame(1,sparks),
 		})
 	end
 end
@@ -1661,41 +1658,47 @@ anim_slash_2 = anim_slash(slash_2, sparks_2)
 anim_slash_3 = anim_slash(slash_3, sparks_3)
 anim_slash_4 = anim_slash(slash_4, sparks_4)
 
-anim_flow = flow.seq({	
-	anim_slash_2(true),
-	anim_frame(noop,4),
-	
-	anim_slash_1(true),
-	anim_frame(noop,4),
-	
-	anim_slash_2(false),
-	anim_frame(noop,4),
-	
-	anim_slash_3(true),
-	anim_frame(noop,4),
-	
-	anim_slash_4(true),
-	anim_frame(noop,4),
-
-	anim_slash_1(false),
-})
 -->8
 -- battle scene
 
-function battle_scn(enemy, btl)
-	local draw = skip_draw
-	
+function battle_frame(enemy, btl)
 	if btl == "idle" then
-		draw = draw_battle_idle(enemy)
+		return draw_battle_idle(enemy)
 	elseif btl == "attack" then
-		draw = draw_battle_attack(enemy)
+		return draw_battle_attack(enemy)
 	elseif btl == "defend" then
-		draw = draw_battle_defend(enemy)
+		return draw_battle_defend(enemy)
 	end
+end
 
-	return ui_scn(
-		ui_draw(draw)
-	)
+function anim_clash(enemy, btl)
+	local atk = btl
+	local def = btl == "attack"
+		and "defend"
+		or  "attack"
+	
+	return flow.seq({
+		-- flurry 1
+		anim_slash_2(atk),
+		anim_frame(2,skip_draw),
+		anim_slash_3(def),
+		anim_frame(2,skip_draw),
+		anim_slash_2(atk),
+		anim_frame(1,skip_draw),
+		-- hold
+		anim_frame(4,battle_frame(enemy,atk)),
+		-- flurry 2
+		anim_slash_1(atk),
+		anim_frame(2,skip_draw),
+		anim_slash_2(def),
+		anim_frame(1,skip_draw),
+		-- hold
+		anim_frame(4,battle_frame(enemy,def)),
+		-- flurry 3
+		anim_slash_4(def),
+		anim_frame(4,skip_draw),
+		anim_slash_1(atk),
+	}):wrap(ui_scn)
 end
 
 function btn_flow(scn)
@@ -1718,12 +1721,20 @@ function btn_flow(scn)
 	end)
 end
 
+battle_scn = chain({
+	battle_frame,
+	ui_draw,
+	ui_scn,
+	btn_flow,
+})
+
 function battle_flow(enemy)
 	return flow.seq({
-		btn_flow(battle_scn(enemy, "idle")),
-		anim_flow:wrap(ui_scn),
-		btn_flow(battle_scn(enemy, "attack")),
-		btn_flow(battle_scn(enemy, "defend")),
+		battle_scn(enemy, "idle"),
+		anim_clash(enemy, "attack"),
+		battle_scn(enemy, "attack"),
+		anim_clash(enemy, "defend"),
+		battle_scn(enemy, "defend"),
 	})
 end
 __gfx__
