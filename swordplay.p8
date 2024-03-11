@@ -7,6 +7,9 @@ __lua__
 -- todos:
 --  battle system:
 --   - lose after 2 misses?
+--   - show new insults/retorts
+--   - hide/disable lame insult (except when needed as a fallback)
+--   - let player challenge captain once they know all retorts
 --  ui:
 --   - better title screen
 --   - better hud?
@@ -1924,7 +1927,7 @@ end
 start_battle_state = {
 	insults={},
 	-- debug ★
-	retorts=all_retorts,
+	retorts={},--all_retorts,
 	tide=0,
 	max_tide=2,
 	enemy=nil,
